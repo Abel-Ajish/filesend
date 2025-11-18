@@ -19,6 +19,7 @@ export class FileNotFoundError extends Error {
 }
 
 export type SharedFile = {
+  id: string;
   name: string;
   size: number;
   sizeLabel: string;
@@ -47,6 +48,7 @@ export async function listFiles(): Promise<SharedFile[]> {
     .map((blob) => {
       const name = blob.pathname.replace(BUCKET_PREFIX, "");
       return {
+        id: blob.pathname,
         name,
         size: blob.size,
         sizeLabel: formatSize(blob.size),
@@ -80,27 +82,28 @@ export async function uploadFile({
   });
 }
 
-export async function deleteFile(filename: string) {
+export async function deleteFile(identifier: { id?: string; name?: string }) {
   const token = requireToken();
-  const safeName = toSafeFilename(filename);
-  const pathname = `${BUCKET_PREFIX}${safeName}`;
+  const targetPath =
+    identifier.id ??
+    (identifier.name
+      ? `${BUCKET_PREFIX}${toSafeFilename(identifier.name)}`
+      : null);
+  if (!targetPath) {
+    throw new InvalidFilenameError("Missing file identifier.");
+  }
   const { blobs } = await list({
-    prefix: pathname,
+    prefix: targetPath,
     token,
     limit: 1,
   });
 
-  const target = blobs.find((blob) => blob.pathname === pathname);
+  const target = blobs.find((blob) => blob.pathname === targetPath);
   if (!target) {
     throw new FileNotFoundError("File not found.");
   }
 
-  const deleteRef =
-    ("url" in target && typeof target.url === "string" && target.url) ||
-    target.downloadUrl ||
-    target.pathname;
-
-  await del(deleteRef, { token });
+  await del(target.pathname, { token });
 }
 
 function formatSize(bytes: number) {
