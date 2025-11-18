@@ -1,10 +1,10 @@
 import FileShare from "@/components/file-share";
-import { listFiles } from "@/lib/blob";
+import { listFiles, type SharedFile } from "@/lib/blob";
 
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
-  let files = [];
+  let files: SharedFile[] = [];
   let errorMessage: string | null = null;
 
   try {

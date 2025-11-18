@@ -1,20 +1,14 @@
 "use client";
 
 import { useState, useTransition } from "react";
-
-type FileItem = {
-  name: string;
-  sizeLabel: string;
-  type: string;
-  url: string;
-};
+import type { SharedFile } from "@/lib/blob";
 
 type Props = {
-  initialFiles: FileItem[];
+  initialFiles: SharedFile[];
 };
 
 export default function FileShare({ initialFiles }: Props) {
-  const [files, setFiles] = useState<FileItem[]>(initialFiles);
+  const [files, setFiles] = useState<SharedFile[]>(initialFiles);
   const [isSending, startSendTransition] = useTransition();
   const [isRefreshing, startRefreshTransition] = useTransition();
 
@@ -22,8 +16,11 @@ export default function FileShare({ initialFiles }: Props) {
     startRefreshTransition(async () => {
       const response = await fetch("/api/files", { cache: "no-store" });
       if (response.ok) {
-        const data = (await response.json()) as { files: FileItem[] };
+        const data = (await response.json()) as { files: SharedFile[] };
         setFiles(data.files);
+      } else {
+        const payload = await response.json().catch(() => ({}));
+        alert(payload.error || "Failed to refresh files.");
       }
     });
   }
@@ -74,7 +71,7 @@ export default function FileShare({ initialFiles }: Props) {
       <section className="panel">
         <h2>Send</h2>
         <p>Upload a file to make it instantly available to anyone with this link.</p>
-        <form onSubmit={handleUpload}>
+        <form onSubmit={handleUpload} encType="multipart/form-data">
           <label className="file-input">
             <input
               type="file"

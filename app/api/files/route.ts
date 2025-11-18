@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listFiles, uploadFile } from "@/lib/blob";
+import { InvalidFilenameError, listFiles, uploadFile } from "@/lib/blob";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,6 +44,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
+    if (error instanceof InvalidFilenameError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
     return NextResponse.json(
       { error: (error as Error).message },
       { status: 500 }
