@@ -43,7 +43,10 @@ export async function listFiles(): Promise<SharedFile[]> {
         name,
         size: blob.size,
         sizeLabel: formatSize(blob.size),
-        type: blob.contentType ?? "application/octet-stream",
+        type:
+          "contentType" in blob && typeof blob.contentType === "string"
+            ? blob.contentType
+            : "application/octet-stream",
         url: blob.downloadUrl,
       } satisfies SharedFile;
     })
