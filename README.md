@@ -28,7 +28,7 @@ The default `next.config.mjs` increases the request body limit to ~200 MB so l
 
 ## Architecture
 
-- UI: App Router (`app/page.tsx`) with a Material-You styled client component that handles uploads, share codes, and code-based downloads.
+- UI: App Router (`app/page.tsx`) with a Material-You styled client component that handles uploads and code-based downloads; no file list is ever shown.
 - Storage: [`@vercel/blob`](https://vercel.com/storage/blob). Uploaded files become public HTTPS links returned by the API.
 - API: `/api/files` for listing & uploading, `/api/files/[filename]` for delete. Both routes are dynamic to ensure fresh data.
 - Lifecycle: uploads are scheduled for deletion 60 seconds after the POST completes, and users can retrieve them using the generated share code before it expires.

@@ -1,21 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import type { SharedFile } from "@/lib/blob";
-
-type Props = {
-  initialFiles: SharedFile[];
-};
 
 type Toast = {
   text: string;
   tone: "info" | "success" | "error";
 };
 
-export default function FileShare({ initialFiles }: Props) {
-  const [files, setFiles] = useState<SharedFile[]>(initialFiles);
+export default function FileShare() {
   const [isSending, startSendTransition] = useTransition();
-  const [isRefreshing, startRefreshTransition] = useTransition();
   const [isCodeLoading, setIsCodeLoading] = useState(false);
   const [shareCode, setShareCode] = useState<string | null>(null);
   const [codeInput, setCodeInput] = useState("");
@@ -39,20 +32,6 @@ export default function FileShare({ initialFiles }: Props) {
 
   function notify(text: string, tone: Toast["tone"] = "info") {
     setToast({ text, tone });
-  }
-
-  async function refreshList() {
-    startRefreshTransition(async () => {
-      const response = await fetch("/api/files", { cache: "no-store" });
-      if (response.ok) {
-        const data = (await response.json()) as { files: SharedFile[] };
-        setFiles(data.files);
-        notify("Files refreshed.", "success");
-        return;
-      }
-      const payload = await response.json().catch(() => ({}));
-      notify(payload.error || "Failed to refresh files.", "error");
-    });
   }
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
@@ -84,26 +63,7 @@ export default function FileShare({ initialFiles }: Props) {
         `Share code ${payload.code ?? ""} ready. Link expires in 1 minute.`,
         "success"
       );
-      await refreshList();
     });
-  }
-
-  async function handleDelete(file: SharedFile) {
-    if (!confirm(`Delete ${file.name}?`)) return;
-    const params = new URLSearchParams({ id: file.id });
-    const response = await fetch(
-      `/api/files/${encodeURIComponent(file.name)}?${params.toString()}`,
-      {
-        method: "DELETE",
-      }
-    );
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      notify(payload.error || "Delete failed.", "error");
-      return;
-    }
-    await refreshList();
-    notify(`${file.name} deleted.`, "success");
   }
 
   async function handleCodeDownload(event: React.FormEvent<HTMLFormElement>) {
@@ -193,16 +153,8 @@ export default function FileShare({ initialFiles }: Props) {
         <div className="receive-head">
           <div>
             <h2>Receive</h2>
-            <p>Download or delete shared files before the timer runs out.</p>
+            <p>Nothing is listed. Type your code to access the file.</p>
           </div>
-          <button
-            type="button"
-            onClick={refreshList}
-            disabled={isRefreshing}
-            className="ghost"
-          >
-            {isRefreshing ? "Refreshing…" : "Refresh"}
-          </button>
         </div>
 
         <form className="code-form" onSubmit={handleCodeDownload}>
@@ -225,40 +177,10 @@ export default function FileShare({ initialFiles }: Props) {
           </div>
         </form>
 
-        {files.length === 0 ? (
-          <p className="notice subtle">No files yet — upload something to get started.</p>
-        ) : (
-          <ul className="file-list">
-            {files.map((file) => (
-              <li key={file.id} className="file-row">
-                <div>
-                  <strong>{file.name}</strong>
-                  <span>
-                    {file.sizeLabel} • {file.type}
-                  </span>
-                  {file.code && <span className="code-chip">Code {file.code}</span>}
-                </div>
-                <div className="file-actions">
-                  <a
-                    className="action-link"
-                    href={file.url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Download
-                  </a>
-                  <button
-                    type="button"
-                    className="danger"
-                    onClick={() => handleDelete(file)}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        <p className="notice subtle">
+          Files stay hidden until a valid code is entered. Only the exact code holder
+          can download.
+        </p>
       </section>
     </>
   );
