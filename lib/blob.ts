@@ -76,6 +76,7 @@ export async function uploadFile({
     contentType,
     access: "public",
     token,
+    addRandomSuffix: false,
   });
 }
 
