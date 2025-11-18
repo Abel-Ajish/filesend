@@ -53,11 +53,15 @@ export default function FileShare({ initialFiles }: Props) {
     });
   }
 
-  async function handleDelete(name: string) {
-    if (!confirm(`Delete ${name}?`)) return;
-    const response = await fetch(`/api/files/${encodeURIComponent(name)}`, {
-      method: "DELETE",
-    });
+  async function handleDelete(file: SharedFile) {
+    if (!confirm(`Delete ${file.name}?`)) return;
+    const params = new URLSearchParams({ id: file.id });
+    const response = await fetch(
+      `/api/files/${encodeURIComponent(file.name)}?${params.toString()}`,
+      {
+        method: "DELETE",
+      }
+    );
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
       alert(payload.error || "Delete failed.");
@@ -112,7 +116,7 @@ export default function FileShare({ initialFiles }: Props) {
         ) : (
           <ul className="file-list">
             {files.map((file) => (
-              <li key={file.name} className="file-row">
+              <li key={file.id} className="file-row">
                 <div>
                   <strong>{file.name}</strong>
                   <span>
@@ -131,7 +135,7 @@ export default function FileShare({ initialFiles }: Props) {
                   <button
                     type="button"
                     className="danger"
-                    onClick={() => handleDelete(file.name)}
+                    onClick={() => handleDelete(file)}
                   >
                     Delete
                   </button>
