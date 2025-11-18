@@ -3,14 +3,12 @@
 import { useState, useTransition } from "react";
 import type { SharedFile } from "@/lib/blob";
 
-type ClientFile = SharedFile & { id: string };
-
 type Props = {
-  initialFiles: ClientFile[];
+  initialFiles: SharedFile[];
 };
 
 export default function FileShare({ initialFiles }: Props) {
-  const [files, setFiles] = useState<ClientFile[]>(initialFiles);
+  const [files, setFiles] = useState<SharedFile[]>(initialFiles);
   const [isSending, startSendTransition] = useTransition();
   const [isRefreshing, startRefreshTransition] = useTransition();
 
@@ -18,7 +16,7 @@ export default function FileShare({ initialFiles }: Props) {
     startRefreshTransition(async () => {
       const response = await fetch("/api/files", { cache: "no-store" });
       if (response.ok) {
-        const data = (await response.json()) as { files: ClientFile[] };
+        const data = (await response.json()) as { files: SharedFile[] };
         setFiles(data.files);
       } else {
         const payload = await response.json().catch(() => ({}));
@@ -55,7 +53,7 @@ export default function FileShare({ initialFiles }: Props) {
     });
   }
 
-  async function handleDelete(file: ClientFile) {
+  async function handleDelete(file: SharedFile) {
     if (!confirm(`Delete ${file.name}?`)) return;
     const params = new URLSearchParams({ id: file.id });
     const response = await fetch(
