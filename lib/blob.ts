@@ -1,9 +1,11 @@
+import { randomBytes } from "node:crypto";
 import { del, list, put } from "@vercel/blob";
 
 const BUCKET_PREFIX = "local-share/";
 const MAX_FILENAME_LENGTH = 180;
 const CONTROL_CHARS_REGEX = /[\u0000-\u001f\u007f]/g;
 const AUTO_DELETE_MS = 60 * 1000;
+const CODE_LENGTH = 6;
 
 export class InvalidFilenameError extends Error {
   constructor(message: string) {
@@ -21,6 +23,7 @@ export class FileNotFoundError extends Error {
 
 export type SharedFile = {
   id: string;
+  code: string | null;
   name: string;
   size: number;
   sizeLabel: string;
@@ -48,10 +51,14 @@ export async function listFiles(): Promise<SharedFile[]> {
 
   return blobs
     .map((blob) => {
-      const name = blob.pathname.replace(BUCKET_PREFIX, "");
+      const fullName = blob.pathname.replace(BUCKET_PREFIX, "");
+      const codeMatch = fullName.match(/^([A-Z0-9]{4,10})-(.+)$/);
+      const code = codeMatch ? codeMatch[1].toUpperCase() : null;
+      const displayName = codeMatch ? codeMatch[2] : fullName;
       return {
         id: blob.pathname,
-        name,
+        code,
+        name: displayName,
         size: blob.size,
         sizeLabel: formatSize(blob.size),
         type:
@@ -69,14 +76,16 @@ export async function uploadFile({
   filename,
   arrayBuffer,
   contentType,
+  code,
 }: {
   filename: string;
   arrayBuffer: ArrayBuffer;
   contentType: string;
+  code: string;
 }) {
   const token = requireToken();
   const safeName = toSafeFilename(filename);
-  const pathname = `${BUCKET_PREFIX}${safeName}`;
+  const pathname = `${BUCKET_PREFIX}${code}-${safeName}`;
   const blob = await put(pathname, arrayBuffer, {
     contentType,
     access: "public",
@@ -145,5 +154,44 @@ function scheduleAutoDelete(pathname: string, token: string) {
     }
   }, AUTO_DELETE_MS);
   timer.unref?.();
+}
+
+export function generateShareCode(): string {
+  // base64 can include + and /, remove non-alphanumeric
+  const raw = randomBytes(6).toString("base64");
+  const cleaned = raw.replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  if (cleaned.length >= CODE_LENGTH) {
+    return cleaned.slice(0, CODE_LENGTH);
+  }
+  return (cleaned + "ABCDEFGH").slice(0, CODE_LENGTH);
+}
+
+export async function findFileByCode(code: string): Promise<SharedFile | null> {
+  const token = requireToken();
+  const normalized = code.trim().toUpperCase();
+  const prefix = `${BUCKET_PREFIX}${normalized}-`;
+  const { blobs } = await list({
+    prefix,
+    token,
+    limit: 1,
+  });
+  const target = blobs.find((blob) => blob.pathname.startsWith(prefix));
+  if (!target) {
+    return null;
+  }
+  const name = target.pathname.replace(prefix, "");
+  return {
+    id: target.pathname,
+    code: normalized,
+    name,
+    size: target.size,
+    sizeLabel: formatSize(target.size),
+    type:
+      "contentType" in target && typeof target.contentType === "string"
+        ? target.contentType
+        : "application/octet-stream",
+    url: target.downloadUrl,
+    expiresAt: null,
+  };
 }
 

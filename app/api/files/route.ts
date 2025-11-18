@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { InvalidFilenameError, listFiles, uploadFile } from "@/lib/blob";
+import {
+  InvalidFilenameError,
+  generateShareCode,
+  listFiles,
+  uploadFile,
+} from "@/lib/blob";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,13 +41,15 @@ export async function POST(request: Request) {
     }
 
     const buffer = await file.arrayBuffer();
+    const code = generateShareCode();
     await uploadFile({
       filename: file.name,
       arrayBuffer: buffer,
       contentType: file.type || "application/octet-stream",
+      code,
     });
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, code });
   } catch (error) {
     if (error instanceof InvalidFilenameError) {
       return NextResponse.json({ error: error.message }, { status: 400 });

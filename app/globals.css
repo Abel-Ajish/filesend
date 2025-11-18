@@ -284,6 +284,70 @@ button:hover,
   gap: 1rem;
 }
 
+.share-result {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.85rem;
+  background: rgba(103, 80, 164, 0.08);
+}
+
+.share-label {
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  color: var(--md-sys-color-outline);
+  margin: 0;
+}
+
+.code-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 0.6rem;
+  background: rgba(103, 80, 164, 0.12);
+  color: var(--md-sys-color-primary);
+}
+
+.code-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.code-form label {
+  font-size: 0.85rem;
+  color: var(--md-sys-color-secondary);
+}
+
+.code-input-wrap {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.code-input {
+  flex: 1;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: 0.75rem;
+  padding: 0.85rem 1rem;
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.code-input:focus {
+  outline: none;
+  border-color: var(--md-sys-color-primary);
+  box-shadow: 0 0 0 3px rgba(103, 80, 164, 0.25);
+}
+
 @media (max-width: 640px) {
   main {
     padding: 1.5rem;
@@ -292,7 +356,9 @@ button:hover,
   .hero,
   form,
   .file-actions,
-  .receive-head {
+  .receive-head,
+  .code-input-wrap,
+  .share-result {
     flex-direction: column;
     align-items: flex-start;
   }

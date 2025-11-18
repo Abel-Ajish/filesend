@@ -16,6 +16,9 @@ export default function FileShare({ initialFiles }: Props) {
   const [files, setFiles] = useState<SharedFile[]>(initialFiles);
   const [isSending, startSendTransition] = useTransition();
   const [isRefreshing, startRefreshTransition] = useTransition();
+  const [isCodeLoading, setIsCodeLoading] = useState(false);
+  const [shareCode, setShareCode] = useState<string | null>(null);
+  const [codeInput, setCodeInput] = useState("");
   const [toast, setToast] = useState<Toast | null>(null);
   const toastTimer = useRef<NodeJS.Timeout | null>(null);
 
@@ -69,15 +72,19 @@ export default function FileShare({ initialFiles }: Props) {
         body: data,
       });
 
+      const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
         notify(payload.error || "Upload failed.", "error");
         return;
       }
 
       form.reset();
+      setShareCode(payload.code ?? null);
+      notify(
+        `Share code ${payload.code ?? ""} ready. Link expires in 1 minute.`,
+        "success"
+      );
       await refreshList();
-      notify("Upload complete. Link expires in 1 minute.", "success");
     });
   }
 
@@ -97,6 +104,40 @@ export default function FileShare({ initialFiles }: Props) {
     }
     await refreshList();
     notify(`${file.name} deleted.`, "success");
+  }
+
+  async function handleCodeDownload(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = codeInput.trim().toUpperCase();
+    if (trimmed.length < 4) {
+      notify("Enter the 6-character code.", "error");
+      return;
+    }
+    setIsCodeLoading(true);
+    try {
+      const response = await fetch(`/api/code/${trimmed}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        notify(payload.error || "Code not found.", "error");
+        return;
+      }
+      setCodeInput("");
+      notify(`Downloading ${payload.file?.name ?? "file"}...`, "success");
+      window.open(payload.file?.url, "_blank", "noopener");
+    } catch (error) {
+      notify((error as Error).message, "error");
+    } finally {
+      setIsCodeLoading(false);
+    }
+  }
+
+  async function copyCode(code: string) {
+    try {
+      await navigator.clipboard.writeText(code);
+      notify("Code copied to clipboard.", "success");
+    } catch {
+      notify("Unable to copy — copy it manually.", "error");
+    }
   }
 
   return (
@@ -135,6 +176,17 @@ export default function FileShare({ initialFiles }: Props) {
         <small className="notice subtle">
           Heads up: every file self-destructs one minute after you upload it.
         </small>
+        {shareCode && (
+          <div className="share-result">
+            <div>
+              <p className="share-label">Share this code</p>
+              <strong aria-live="polite">{shareCode}</strong>
+            </div>
+            <button type="button" className="ghost" onClick={() => copyCode(shareCode)}>
+              Copy
+            </button>
+          </div>
+        )}
       </section>
 
       <section className="panel">
@@ -153,6 +205,26 @@ export default function FileShare({ initialFiles }: Props) {
           </button>
         </div>
 
+        <form className="code-form" onSubmit={handleCodeDownload}>
+          <label htmlFor="code-input">Have a code?</label>
+          <div className="code-input-wrap">
+            <input
+              id="code-input"
+              className="code-input"
+              placeholder="e.g., 9F2K6A"
+              value={codeInput}
+              onChange={(event) =>
+                setCodeInput(event.target.value.toUpperCase().slice(0, 6))
+              }
+              autoComplete="off"
+              maxLength={6}
+            />
+            <button type="submit" disabled={isCodeLoading || codeInput.length < 4}>
+              {isCodeLoading ? "Preparing…" : "Download"}
+            </button>
+          </div>
+        </form>
+
         {files.length === 0 ? (
           <p className="notice subtle">No files yet — upload something to get started.</p>
         ) : (
@@ -164,6 +236,7 @@ export default function FileShare({ initialFiles }: Props) {
                   <span>
                     {file.sizeLabel} • {file.type}
                   </span>
+                  {file.code && <span className="code-chip">Code {file.code}</span>}
                 </div>
                 <div className="file-actions">
                   <a
