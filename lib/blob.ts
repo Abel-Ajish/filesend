@@ -1,5 +1,3 @@
-"use server";
-
 import { list, put, del } from "@vercel/blob";
 
 const BUCKET_PREFIX = "local-share/";
