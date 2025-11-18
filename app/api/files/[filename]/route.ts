@@ -9,10 +9,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: { filename: string } }
 ) {
   try {
+    const url = new URL(request.url);
+    const idParam = url.searchParams.get("id");
     const decoded = decodeURIComponent(params.filename);
     if (!decoded) {
       return NextResponse.json(
@@ -20,7 +22,7 @@ export async function DELETE(
         { status: 400 }
       );
     }
-    await deleteFile(decoded);
+    await deleteFile({ id: idParam ?? undefined, name: decoded });
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof InvalidFilenameError) {

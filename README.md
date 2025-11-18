@@ -1,6 +1,6 @@
 # Local Share (Vercel-ready)
 
-Minimal send/receive sharing site running on Next.js and Vercel Blob storage. All uploads are stored in Blob so the app scales on Vercel without needing persistent disks.
+Minimal send/receive sharing site running on Next.js and Vercel Blob storage. All uploads are stored in Blob so the app scales on Vercel without needing persistent disks. Each upload is automatically deleted one minute after it is received (best-effort timer in the API).
 
 ## Prerequisites
 
@@ -31,6 +31,7 @@ The default `next.config.mjs` increases the request body limit to ~200 MB so l
 - UI: App Router (`app/page.tsx`) with a client component to handle uploads/deletes without leaving the page.
 - Storage: [`@vercel/blob`](https://vercel.com/storage/blob). Uploaded files become public HTTPS links returned by the API.
 - API: `/api/files` for listing & uploading, `/api/files/[filename]` for delete. Both routes are dynamic to ensure fresh data.
+- Lifecycle: uploads are scheduled for deletion 60 seconds after the POST completes.
 
 ## Security considerations
 

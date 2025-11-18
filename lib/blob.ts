@@ -1,8 +1,9 @@
-import { list, put, del } from "@vercel/blob";
+import { del, list, put } from "@vercel/blob";
 
 const BUCKET_PREFIX = "local-share/";
 const MAX_FILENAME_LENGTH = 180;
 const CONTROL_CHARS_REGEX = /[\u0000-\u001f\u007f]/g;
+const AUTO_DELETE_MS = 60 * 1000;
 
 export class InvalidFilenameError extends Error {
   constructor(message: string) {
@@ -19,11 +20,13 @@ export class FileNotFoundError extends Error {
 }
 
 export type SharedFile = {
+  id: string;
   name: string;
   size: number;
   sizeLabel: string;
   type: string;
   url: string;
+  expiresAt: string | null;
 };
 
 function requireToken(): string {
@@ -47,6 +50,7 @@ export async function listFiles(): Promise<SharedFile[]> {
     .map((blob) => {
       const name = blob.pathname.replace(BUCKET_PREFIX, "");
       return {
+        id: blob.pathname,
         name,
         size: blob.size,
         sizeLabel: formatSize(blob.size),
@@ -55,6 +59,7 @@ export async function listFiles(): Promise<SharedFile[]> {
             ? blob.contentType
             : "application/octet-stream",
         url: blob.downloadUrl,
+        expiresAt: null,
       } satisfies SharedFile;
     })
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -72,35 +77,37 @@ export async function uploadFile({
   const token = requireToken();
   const safeName = toSafeFilename(filename);
   const pathname = `${BUCKET_PREFIX}${safeName}`;
-  return await put(pathname, arrayBuffer, {
+  const blob = await put(pathname, arrayBuffer, {
     contentType,
     access: "public",
     token,
     addRandomSuffix: false,
   });
+  scheduleAutoDelete(pathname, token);
+  return blob;
 }
 
-export async function deleteFile(filename: string) {
+export async function deleteFile({
+  id,
+  name,
+}: {
+  id?: string | null;
+  name?: string | null;
+}) {
   const token = requireToken();
-  const safeName = toSafeFilename(filename);
-  const pathname = `${BUCKET_PREFIX}${safeName}`;
-  const { blobs } = await list({
-    prefix: pathname,
-    token,
-    limit: 1,
-  });
-
-  const target = blobs.find((blob) => blob.pathname === pathname);
-  if (!target) {
+  const targetPath = id
+    ? decodeURIComponent(id)
+    : name
+      ? `${BUCKET_PREFIX}${toSafeFilename(name)}`
+      : null;
+  if (!targetPath) {
+    throw new InvalidFilenameError("Missing file identifier.");
+  }
+  try {
+    await del(targetPath, { token });
+  } catch (error) {
     throw new FileNotFoundError("File not found.");
   }
-
-  const deleteRef =
-    ("url" in target && typeof target.url === "string" && target.url) ||
-    target.downloadUrl ||
-    target.pathname;
-
-  await del(deleteRef, { token });
 }
 
 function formatSize(bytes: number) {
@@ -127,5 +134,16 @@ function toSafeFilename(raw: string) {
     return trimmed.slice(0, MAX_FILENAME_LENGTH);
   }
   return trimmed;
+}
+
+function scheduleAutoDelete(pathname: string, token: string) {
+  const timer = setTimeout(async () => {
+    try {
+      await del(pathname, { token });
+    } catch (error) {
+      console.warn("Failed to auto-delete blob", pathname, error);
+    }
+  }, AUTO_DELETE_MS);
+  timer.unref?.();
 }
 
