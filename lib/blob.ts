@@ -11,6 +11,13 @@ export class InvalidFilenameError extends Error {
   }
 }
 
+export class FileNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FileNotFoundError";
+  }
+}
+
 export type SharedFile = {
   name: string;
   size: number;
@@ -76,7 +83,23 @@ export async function deleteFile(filename: string) {
   const token = requireToken();
   const safeName = toSafeFilename(filename);
   const pathname = `${BUCKET_PREFIX}${safeName}`;
-  await del(pathname, { token });
+  const { blobs } = await list({
+    prefix: pathname,
+    token,
+    limit: 1,
+  });
+
+  const target = blobs.find((blob) => blob.pathname === pathname);
+  if (!target) {
+    throw new FileNotFoundError("File not found.");
+  }
+
+  const deleteRef =
+    ("url" in target && typeof target.url === "string" && target.url) ||
+    target.downloadUrl ||
+    target.pathname;
+
+  await del(deleteRef, { token });
 }
 
 function formatSize(bytes: number) {

@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { InvalidFilenameError, deleteFile } from "@/lib/blob";
+import {
+  FileNotFoundError,
+  InvalidFilenameError,
+  deleteFile,
+} from "@/lib/blob";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +25,9 @@ export async function DELETE(
   } catch (error) {
     if (error instanceof InvalidFilenameError) {
       return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    if (error instanceof FileNotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
     }
     return NextResponse.json(
       { error: (error as Error).message },
