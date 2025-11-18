@@ -1,16 +1,42 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type { SharedFile } from "@/lib/blob";
 
 type Props = {
   initialFiles: SharedFile[];
 };
 
+type Toast = {
+  text: string;
+  tone: "info" | "success" | "error";
+};
+
 export default function FileShare({ initialFiles }: Props) {
   const [files, setFiles] = useState<SharedFile[]>(initialFiles);
   const [isSending, startSendTransition] = useTransition();
   const [isRefreshing, startRefreshTransition] = useTransition();
+  const [toast, setToast] = useState<Toast | null>(null);
+  const toastTimer = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!toast) {
+      return;
+    }
+    if (toastTimer.current) {
+      clearTimeout(toastTimer.current);
+    }
+    toastTimer.current = setTimeout(() => setToast(null), 4000);
+    return () => {
+      if (toastTimer.current) {
+        clearTimeout(toastTimer.current);
+      }
+    };
+  }, [toast]);
+
+  function notify(text: string, tone: Toast["tone"] = "info") {
+    setToast({ text, tone });
+  }
 
   async function refreshList() {
     startRefreshTransition(async () => {
@@ -18,10 +44,11 @@ export default function FileShare({ initialFiles }: Props) {
       if (response.ok) {
         const data = (await response.json()) as { files: SharedFile[] };
         setFiles(data.files);
-      } else {
-        const payload = await response.json().catch(() => ({}));
-        alert(payload.error || "Failed to refresh files.");
+        notify("Files refreshed.", "success");
+        return;
       }
+      const payload = await response.json().catch(() => ({}));
+      notify(payload.error || "Failed to refresh files.", "error");
     });
   }
 
@@ -32,7 +59,7 @@ export default function FileShare({ initialFiles }: Props) {
     const file = data.get("file");
 
     if (!file || !(file instanceof File)) {
-      alert("Please choose a file.");
+      notify("Please choose a file to upload.", "error");
       return;
     }
 
@@ -44,12 +71,13 @@ export default function FileShare({ initialFiles }: Props) {
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        alert(payload.error || "Upload failed.");
+        notify(payload.error || "Upload failed.", "error");
         return;
       }
 
       form.reset();
       await refreshList();
+      notify("Upload complete. Link expires in 1 minute.", "success");
     });
   }
 
@@ -64,17 +92,31 @@ export default function FileShare({ initialFiles }: Props) {
     );
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
-      alert(payload.error || "Delete failed.");
+      notify(payload.error || "Delete failed.", "error");
       return;
     }
     await refreshList();
+    notify(`${file.name} deleted.`, "success");
   }
 
   return (
     <>
+      <div className="hero">
+        <div>
+          <h1>Local Share</h1>
+          <p>Drop files, hand off the link, and we’ll tidy up in 60 seconds.</p>
+          <small>Runs entirely on your network using Vercel Blob.</small>
+        </div>
+        <div className="pill">Auto delete · 1 min</div>
+      </div>
+      {toast && (
+        <div className={`toast toast-${toast.tone}`} role="status" aria-live="polite">
+          {toast.text}
+        </div>
+      )}
       <section className="panel">
         <h2>Send</h2>
-        <p>Upload a file to make it instantly available to anyone with this link.</p>
+        <p>Choose any file — we’ll instantly create a shareable download link.</p>
         <form onSubmit={handleUpload} encType="multipart/form-data">
           <label className="file-input">
             <input
@@ -84,35 +126,35 @@ export default function FileShare({ initialFiles }: Props) {
               aria-label="Upload file"
               disabled={isSending}
             />
-            <span>Choose file</span>
+            <span>{isSending ? "Uploading…" : "Choose file"}</span>
           </label>
           <button type="submit" disabled={isSending}>
-            {isSending ? "Uploading…" : "Upload"}
+            {isSending ? "Sending…" : "Upload"}
           </button>
         </form>
-        <small className="notice">
-          Files are stored in Vercel Blob. Set retention policies as needed.
+        <small className="notice subtle">
+          Heads up: every file self-destructs one minute after you upload it.
         </small>
       </section>
 
       <section className="panel">
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <div className="receive-head">
           <div>
             <h2>Receive</h2>
-            <p>Download or delete any shared file.</p>
+            <p>Download or delete shared files before the timer runs out.</p>
           </div>
           <button
             type="button"
             onClick={refreshList}
             disabled={isRefreshing}
-            style={{ minWidth: 120 }}
+            className="ghost"
           >
             {isRefreshing ? "Refreshing…" : "Refresh"}
           </button>
         </div>
 
         {files.length === 0 ? (
-          <p className="notice">No files available yet.</p>
+          <p className="notice subtle">No files yet — upload something to get started.</p>
         ) : (
           <ul className="file-list">
             {files.map((file) => (
