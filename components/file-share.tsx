@@ -136,7 +136,7 @@ export default function FileShare() {
       <div className="hero">
         <div>
           <h1>Local Share</h1>
-          <p>Drop files, hand off the link, and we'll tidy up in 60 seconds.</p>
+          <p>Drop files, hand off the link, and we&apos;ll tidy up in 60 seconds.</p>
           <small>Runs entirely on your network using Secure Cloud to ensure seamless transfer of files.</small>
         </div>
         <div className="pill">Auto delete · 1 min</div>
@@ -188,7 +188,7 @@ export default function FileShare() {
               ← Back
             </button>
           </div>
-          <p>Choose any file — we'll instantly create a shareable download link.</p>
+          <p>Choose any file — we&apos;ll instantly create a shareable download link.</p>
           <form onSubmit={handleUpload} encType="multipart/form-data">
             <label className="file-input">
               <input
