@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { del, list, put } from "@vercel/blob";
+import { Client, Storage, ID, Query, Permission, Role } from "node-appwrite";
 
 const BUCKET_PREFIX = "local-share/";
 const MAX_FILENAME_LENGTH = 180;
@@ -32,40 +32,53 @@ export type SharedFile = {
   expiresAt: string | null;
 };
 
-function requireToken(): string {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) {
+function requireConfig() {
+  const endpoint = process.env.APPWRITE_ENDPOINT;
+  const projectId = process.env.APPWRITE_PROJECT_ID;
+  const apiKey = process.env.APPWRITE_API_KEY;
+  const bucketId = process.env.APPWRITE_BUCKET_ID;
+
+  if (!endpoint || !projectId || !apiKey || !bucketId) {
     throw new Error(
-      "Missing BLOB_READ_WRITE_TOKEN environment variable. Generate one in the Vercel dashboard."
+      "Missing Appwrite configuration. Ensure APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY, and APPWRITE_BUCKET_ID are set in .env.local"
     );
   }
-  return token;
+
+  return { endpoint, projectId, apiKey, bucketId };
+}
+
+function getStorage() {
+  const { endpoint, projectId, apiKey } = requireConfig();
+
+  const client = new Client()
+    .setEndpoint(endpoint)
+    .setProject(projectId)
+    .setKey(apiKey);
+
+  return new Storage(client);
 }
 
 export async function listFiles(): Promise<SharedFile[]> {
-  const token = requireToken();
-  const { blobs } = await list({
-    prefix: BUCKET_PREFIX,
-    token,
-  });
+  const storage = getStorage();
+  const { bucketId } = requireConfig();
 
-  return blobs
-    .map((blob) => {
-      const fullName = blob.pathname.replace(BUCKET_PREFIX, "");
+  const response = await storage.listFiles(bucketId);
+
+  return response.files
+    .map((file) => {
+      const fullName = file.name;
       const codeMatch = fullName.match(/^([A-Z0-9]{4,10})-(.+)$/);
       const code = codeMatch ? codeMatch[1].toUpperCase() : null;
       const displayName = codeMatch ? codeMatch[2] : fullName;
+
       return {
-        id: blob.pathname,
+        id: file.$id,
         code,
         name: displayName,
-        size: blob.size,
-        sizeLabel: formatSize(blob.size),
-        type:
-          "contentType" in blob && typeof blob.contentType === "string"
-            ? blob.contentType
-            : "application/octet-stream",
-        url: blob.downloadUrl,
+        size: file.sizeOriginal,
+        sizeLabel: formatSize(file.sizeOriginal),
+        type: file.mimeType || "application/octet-stream",
+        url: getFileUrl(file.$id),
         expiresAt: null,
       } satisfies SharedFile;
     })
@@ -83,17 +96,25 @@ export async function uploadFile({
   contentType: string;
   code: string;
 }) {
-  const token = requireToken();
+  const storage = getStorage();
+  const { bucketId } = requireConfig();
+
   const safeName = toSafeFilename(filename);
-  const pathname = `${BUCKET_PREFIX}${code}-${safeName}`;
-  const blob = await put(pathname, arrayBuffer, {
-    contentType,
-    access: "public",
-    token,
-    addRandomSuffix: false,
-  });
-  scheduleAutoDelete(pathname, token);
-  return blob;
+  const fullName = `${code}-${safeName}`;
+
+  // Convert ArrayBuffer to File object for Appwrite
+  const blob = new Blob([arrayBuffer], { type: contentType });
+  const file = new File([blob], fullName, { type: contentType });
+
+  const uploadedFile = await storage.createFile(
+    bucketId,
+    ID.unique(),
+    file,
+    [Permission.read(Role.any())]  // Allow anyone to read/download the file
+  );
+
+  scheduleAutoDelete(uploadedFile.$id);
+  return uploadedFile;
 }
 
 export async function deleteFile({
@@ -103,20 +124,35 @@ export async function deleteFile({
   id?: string | null;
   name?: string | null;
 }) {
-  const token = requireToken();
-  const targetPath = id
-    ? decodeURIComponent(id)
-    : name
-      ? `${BUCKET_PREFIX}${toSafeFilename(name)}`
-      : null;
-  if (!targetPath) {
+  const storage = getStorage();
+  const { bucketId } = requireConfig();
+
+  let fileId = id;
+
+  // If only name is provided, find the file by name
+  if (!fileId && name) {
+    const files = await listFiles();
+    const found = files.find((f) => f.name === name);
+    if (!found) {
+      throw new FileNotFoundError("File not found.");
+    }
+    fileId = found.id;
+  }
+
+  if (!fileId) {
     throw new InvalidFilenameError("Missing file identifier.");
   }
+
   try {
-    await del(targetPath, { token });
+    await storage.deleteFile(bucketId, fileId);
   } catch (error) {
     throw new FileNotFoundError("File not found.");
   }
+}
+
+function getFileUrl(fileId: string): string {
+  const { endpoint, projectId, bucketId } = requireConfig();
+  return `${endpoint}/storage/buckets/${bucketId}/files/${fileId}/download?project=${projectId}`;
 }
 
 function formatSize(bytes: number) {
@@ -145,12 +181,12 @@ function toSafeFilename(raw: string) {
   return trimmed;
 }
 
-function scheduleAutoDelete(pathname: string, token: string) {
+function scheduleAutoDelete(fileId: string) {
   const timer = setTimeout(async () => {
     try {
-      await del(pathname, { token });
+      await deleteFile({ id: fileId });
     } catch (error) {
-      console.warn("Failed to auto-delete blob", pathname, error);
+      console.warn("Failed to auto-delete file", fileId, error);
     }
   }, AUTO_DELETE_MS);
   timer.unref?.();
@@ -167,31 +203,32 @@ export function generateShareCode(): string {
 }
 
 export async function findFileByCode(code: string): Promise<SharedFile | null> {
-  const token = requireToken();
+  const storage = getStorage();
+  const { bucketId } = requireConfig();
+
   const normalized = code.trim().toUpperCase();
-  const prefix = `${BUCKET_PREFIX}${normalized}-`;
-  const { blobs } = await list({
-    prefix,
-    token,
-    limit: 1,
-  });
-  const target = blobs.find((blob) => blob.pathname.startsWith(prefix));
+
+  // List all files and filter by code prefix in filename
+  const response = await storage.listFiles(bucketId);
+
+  const target = response.files.find((file) =>
+    file.name.startsWith(`${normalized}-`)
+  );
+
   if (!target) {
     return null;
   }
-  const name = target.pathname.replace(prefix, "");
+
+  const name = target.name.replace(`${normalized}-`, "");
+
   return {
-    id: target.pathname,
+    id: target.$id,
     code: normalized,
     name,
-    size: target.size,
-    sizeLabel: formatSize(target.size),
-    type:
-      "contentType" in target && typeof target.contentType === "string"
-        ? target.contentType
-        : "application/octet-stream",
-    url: target.downloadUrl,
+    size: target.sizeOriginal,
+    sizeLabel: formatSize(target.sizeOriginal),
+    type: target.mimeType || "application/octet-stream",
+    url: getFileUrl(target.$id),
     expiresAt: null,
   };
 }
-

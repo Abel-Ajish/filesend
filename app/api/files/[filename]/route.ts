@@ -3,7 +3,7 @@ import {
   FileNotFoundError,
   InvalidFilenameError,
   deleteFile,
-} from "@/lib/blob";
+} from "@/lib/appwrite";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

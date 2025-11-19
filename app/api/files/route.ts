@@ -4,7 +4,7 @@ import {
   generateShareCode,
   listFiles,
   uploadFile,
-} from "@/lib/blob";
+} from "@/lib/appwrite";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

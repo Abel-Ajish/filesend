@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { findFileByCode } from "@/lib/blob";
+import { findFileByCode } from "@/lib/appwrite";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

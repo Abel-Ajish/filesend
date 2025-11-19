@@ -106,7 +106,7 @@ export default function FileShare() {
         <div>
           <h1>Local Share</h1>
           <p>Drop files, hand off the link, and we’ll tidy up in 60 seconds.</p>
-          <small>Runs entirely on your network using Vercel Blob.</small>
+          <small>Runs entirely on your network using Appwrite Cloud.</small>
         </div>
         <div className="pill">Auto delete · 1 min</div>
       </div>
