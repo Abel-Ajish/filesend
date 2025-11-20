@@ -10,7 +10,10 @@ type Toast = {
 
 export default function FileShare() {
   const [mode, setMode] = useState<"send" | "receive" | null>(null);
-  const [isSending, startSendTransition] = useTransition();
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   const [isCodeLoading, setIsCodeLoading] = useState(false);
   const [shareCode, setShareCode] = useState<string | null>(null);
   const [codeInput, setCodeInput] = useState("");
@@ -34,8 +37,83 @@ export default function FileShare() {
     };
   }, [toast]);
 
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("theme") as "light" | "dark" | null;
+    if (savedTheme) {
+      setTheme(savedTheme);
+      document.documentElement.setAttribute("data-theme", savedTheme);
+    } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      setTheme("dark");
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  }, []);
+
+  function toggleTheme() {
+    const newTheme = theme === "light" ? "dark" : "light";
+    setTheme(newTheme);
+    localStorage.setItem("theme", newTheme);
+    document.documentElement.setAttribute("data-theme", newTheme);
+  }
+
   function notify(text: string, tone: Toast["tone"] = "info") {
     setToast({ text, tone });
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      uploadFile(file);
+    }
+  }
+
+  function uploadFile(file: File) {
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/files");
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        setUploadProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      setIsUploading(false);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const payload = JSON.parse(xhr.responseText);
+        setShareCode(payload.code ?? null);
+        notify(
+          `Share code ${payload.code ?? ""} ready. Link expires in 1 minute.`,
+          "success"
+        );
+      } else {
+        const payload = JSON.parse(xhr.responseText || "{}");
+        notify(payload.error || "Upload failed.", "error");
+      }
+    };
+
+    xhr.onerror = () => {
+      setIsUploading(false);
+      notify("Upload failed.", "error");
+    };
+
+    const formData = new FormData();
+    formData.append("file", file);
+    xhr.send(formData);
   }
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
@@ -49,25 +127,8 @@ export default function FileShare() {
       return;
     }
 
-    startSendTransition(async () => {
-      const response = await fetch("/api/files", {
-        method: "POST",
-        body: data,
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        notify(payload.error || "Upload failed.", "error");
-        return;
-      }
-
-      form.reset();
-      setShareCode(payload.code ?? null);
-      notify(
-        `Share code ${payload.code ?? ""} ready. Link expires in 1 minute.`,
-        "success"
-      );
-    });
+    uploadFile(file);
+    form.reset();
   }
 
   async function handleCodeDownload(event: React.FormEvent<HTMLFormElement>) {
@@ -124,6 +185,15 @@ export default function FileShare() {
 
   return (
     <>
+      <button
+        type="button"
+        className="theme-toggle"
+        onClick={toggleTheme}
+        aria-label="Toggle Theme"
+      >
+        {theme === "light" ? "🌙" : "☀️"}
+      </button>
+
       <button
         type="button"
         className="qr-floating-button"
@@ -189,21 +259,41 @@ export default function FileShare() {
             </button>
           </div>
           <p>Choose any file — we&apos;ll instantly create a shareable download link.</p>
-          <form onSubmit={handleUpload} encType="multipart/form-data">
-            <label className="file-input">
-              <input
-                type="file"
-                name="file"
-                required
-                aria-label="Upload file"
-                disabled={isSending}
-              />
-              <span>{isSending ? "Uploading…" : "Choose file"}</span>
-            </label>
-            <button type="submit" disabled={isSending}>
-              {isSending ? "Sending…" : "Upload"}
-            </button>
-          </form>
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <form onSubmit={handleUpload} encType="multipart/form-data">
+              <label className={`file-input ${isDragging ? "drag-active" : ""}`}>
+                <input
+                  type="file"
+                  name="file"
+                  required
+                  aria-label="Upload file"
+                  disabled={isUploading}
+                />
+                <span>
+                  {isUploading
+                    ? `Uploading… ${uploadProgress}%`
+                    : isDragging
+                      ? "Drop file here!"
+                      : "Choose file or drag & drop"}
+                </span>
+              </label>
+              <button type="submit" disabled={isUploading}>
+                {isUploading ? "Sending…" : "Upload"}
+              </button>
+            </form>
+            {isUploading && (
+              <div className="progress-container">
+                <div
+                  className="progress-fill"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            )}
+          </div>
           <small className="notice subtle">
             Heads up: every file self-destructs one minute after you upload it.
           </small>
@@ -271,7 +361,7 @@ export default function FileShare() {
           <div className="qr-content" onClick={(e) => e.stopPropagation()}>
             <h3>Scan to Visit Website</h3>
             <img src={qrCodeUrl} alt="QR Code for website" />
-            <p>Scan this QR code to access the file sharing website</p>
+            <p>Scan this QR code to access the file sharing website on other devices.</p>
             <button type="button" onClick={() => setShowQR(false)}>
               Close
             </button>
