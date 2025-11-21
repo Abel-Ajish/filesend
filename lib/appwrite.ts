@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+
 import { Client, Storage, ID, Query, Permission, Role } from "node-appwrite";
 
 const BUCKET_PREFIX = "local-share/";
@@ -193,42 +193,100 @@ function scheduleAutoDelete(fileId: string) {
 }
 
 export function generateShareCode(): string {
-  // base64 can include + and /, remove non-alphanumeric
-  const raw = randomBytes(6).toString("base64");
-  const cleaned = raw.replace(/[^A-Z0-9]/gi, "").toUpperCase();
-  if (cleaned.length >= CODE_LENGTH) {
-    return cleaned.slice(0, CODE_LENGTH);
+  const chars = "ABCDEFGHIJKLMNPQRSTUVWXYZ123456789"; // Removed 0 and O for clarity
+  let result = "";
+  for (let i = 0; i < CODE_LENGTH; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
-  return (cleaned + "ABCDEFGH").slice(0, CODE_LENGTH);
+  return result;
 }
 
-export async function findFileByCode(code: string): Promise<SharedFile | null> {
+export async function findFilesByCode(code: string): Promise<SharedFile[]> {
   const storage = getStorage();
   const { bucketId } = requireConfig();
 
   const normalized = code.trim().toUpperCase();
 
-  // List all files and filter by code prefix in filename
-  const response = await storage.listFiles(bucketId);
+  // Use Query to filter files by name prefix
+  const response = await storage.listFiles(bucketId, [
+    Query.startsWith("name", `${normalized}-`),
+  ]);
 
-  const target = response.files.find((file) =>
-    file.name.startsWith(`${normalized}-`)
-  );
+  // Filter out signal files
+  const targets = response.files.filter(f => !f.name.includes("SIGNAL-"));
 
-  if (!target) {
+  return targets.map((target) => {
+    const name = target.name.replace(`${normalized}-`, "");
+    return {
+      id: target.$id,
+      code: normalized,
+      name,
+      size: target.sizeOriginal,
+      sizeLabel: formatSize(target.sizeOriginal),
+      type: target.mimeType || "application/octet-stream",
+      url: getFileUrl(target.$id),
+      expiresAt: null,
+    };
+  });
+}
+
+export async function uploadSignal(code: string, type: "HOST" | "PEER", data: string) {
+  const storage = getStorage();
+  const { bucketId } = requireConfig();
+
+  const filename = `SIGNAL-${code}-${type}`;
+  const file = new File([data], filename, { type: "application/json" });
+
+  try {
+    // Try to delete existing signal first
+    const existing = await storage.listFiles(bucketId, [
+      Query.equal("name", filename)
+    ]);
+    if (existing.total > 0) {
+      await storage.deleteFile(bucketId, existing.files[0].$id);
+    }
+
+    const uploaded = await storage.createFile(
+      bucketId,
+      ID.unique(),
+      file,
+      [Permission.read(Role.any())]
+    );
+
+    // Auto-delete signals quickly (e.g., 2 minutes)
+    setTimeout(async () => {
+      try {
+        await storage.deleteFile(bucketId, uploaded.$id);
+      } catch { }
+    }, 120 * 1000);
+
+    return uploaded;
+  } catch (error) {
+    console.error("Signal upload failed", error);
+    throw error;
+  }
+}
+
+export async function checkSignal(code: string, type: "HOST" | "PEER"): Promise<string | null> {
+  const storage = getStorage();
+  const { bucketId } = requireConfig();
+  const filename = `SIGNAL-${code}-${type}`;
+
+  try {
+    const response = await storage.listFiles(bucketId, [
+      Query.equal("name", filename)
+    ]);
+
+    if (response.total > 0) {
+      const fileId = response.files[0].$id;
+      const downloadUrl = getFileUrl(fileId);
+      const res = await fetch(downloadUrl);
+      if (res.ok) {
+        return await res.text();
+      }
+    }
+    return null;
+  } catch {
     return null;
   }
-
-  const name = target.name.replace(`${normalized}-`, "");
-
-  return {
-    id: target.$id,
-    code: normalized,
-    name,
-    size: target.sizeOriginal,
-    sizeLabel: formatSize(target.sizeOriginal),
-    type: target.mimeType || "application/octet-stream",
-    url: getFileUrl(target.$id),
-    expiresAt: null,
-  };
 }

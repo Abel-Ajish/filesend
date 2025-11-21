@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { findFileByCode } from "@/lib/appwrite";
+import { findFilesByCode } from "@/lib/appwrite";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,14 +17,14 @@ export async function GET(
       );
     }
 
-    const file = await findFileByCode(raw);
-    if (!file) {
+    const files = await findFilesByCode(raw);
+    if (files.length === 0) {
       return NextResponse.json(
         { error: "Code not found or already expired." },
         { status: 404 }
       );
     }
-    return NextResponse.json({ file });
+    return NextResponse.json({ files });
   } catch (error) {
     return NextResponse.json(
       { error: (error as Error).message },

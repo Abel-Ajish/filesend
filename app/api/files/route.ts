@@ -41,7 +41,9 @@ export async function POST(request: Request) {
     }
 
     const buffer = await file.arrayBuffer();
-    const code = generateShareCode();
+    const providedCode = formData.get("code") as string | null;
+    const code = providedCode || generateShareCode();
+
     await uploadFile({
       filename: file.name,
       arrayBuffer: buffer,

@@ -2,10 +2,23 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import QRCode from "qrcode";
+import { P2PManager } from "@/lib/p2p";
+import { uploadSignal, checkSignal } from "@/lib/appwrite";
 
 type Toast = {
   text: string;
   tone: "info" | "success" | "error";
+};
+
+type SharedFile = {
+  id: string;
+  code: string | null;
+  name: string;
+  size: number;
+  sizeLabel: string;
+  type: string;
+  url: string;
+  expiresAt: string | null;
 };
 
 export default function FileShare() {
@@ -20,7 +33,12 @@ export default function FileShare() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [showQR, setShowQR] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
+  const [receivedFiles, setReceivedFiles] = useState<SharedFile[]>([]);
+  const [isP2PConnected, setIsP2PConnected] = useState(false);
+
   const toastTimer = useRef<NodeJS.Timeout | null>(null);
+  const p2pManager = useRef<P2PManager | null>(null);
+  const p2pFilesToSend = useRef<File[]>([]);
 
   useEffect(() => {
     if (!toast) {
@@ -48,6 +66,15 @@ export default function FileShare() {
     }
   }, []);
 
+  // Cleanup P2P on unmount
+  useEffect(() => {
+    return () => {
+      if (p2pManager.current) {
+        p2pManager.current.close();
+      }
+    };
+  }, []);
+
   function toggleTheme() {
     const newTheme = theme === "light" ? "dark" : "light";
     setTheme(newTheme);
@@ -72,73 +99,280 @@ export default function FileShare() {
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      uploadFile(file);
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    if (droppedFiles.length > 0) {
+      handleUploadFiles(droppedFiles);
     }
   }
 
-  function uploadFile(file: File) {
+  const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+
+  async function startP2PHost(code: string, files: File[]) {
+    p2pFilesToSend.current = files;
+
+    p2pManager.current = new P2PManager(
+      () => {
+        setIsP2PConnected(true);
+        // Connected! Send files.
+        sendP2PFiles();
+      },
+      (data) => {
+        // Host receiving data? Not implemented for this flow.
+      },
+      () => {
+        setIsP2PConnected(false);
+      }
+    );
+
+    try {
+      const offer = await p2pManager.current.createOffer();
+      await uploadSignal(code, "HOST", offer);
+
+      // Poll for answer
+      const pollInterval = setInterval(async () => {
+        if (!p2pManager.current) {
+          clearInterval(pollInterval);
+          return;
+        }
+        const answer = await checkSignal(code, "PEER");
+        if (answer) {
+          clearInterval(pollInterval);
+          await p2pManager.current.setAnswer(answer);
+        }
+      }, 2000);
+
+      // Stop polling after 2 minutes
+      setTimeout(() => clearInterval(pollInterval), 120000);
+
+    } catch (error) {
+      console.error("P2P Host Error", error);
+    }
+  }
+
+  async function sendP2PFiles() {
+    if (!p2pManager.current) return;
+
+    const CHUNK_SIZE = 16 * 1024; // 16KB safe chunk size
+
+    for (const file of p2pFilesToSend.current) {
+      // Send metadata
+      const metadata = JSON.stringify({
+        type: "metadata",
+        file: {
+          name: file.name,
+          size: file.size,
+          type: file.type
+        }
+      });
+      p2pManager.current.send(metadata);
+
+      // Send file content in chunks
+      const buffer = await file.arrayBuffer();
+      let offset = 0;
+      while (offset < buffer.byteLength) {
+        const chunk = buffer.slice(offset, offset + CHUNK_SIZE);
+        p2pManager.current.send(chunk);
+        offset += CHUNK_SIZE;
+      }
+    }
+  }
+
+  async function uploadFiles(files: File[]) {
+    if (!navigator.onLine) {
+      notify("You are offline. Please check your connection.", "error");
+      return;
+    }
+
     setIsUploading(true);
     setUploadProgress(0);
+    setShareCode(null);
 
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/files");
+    let currentCode: string | null = null;
+    let successCount = 0;
+    let failCount = 0;
+    const errors: string[] = [];
+    let bandwidthError = false;
 
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        setUploadProgress(Math.round((e.loaded / e.total) * 100));
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const formData = new FormData();
+      formData.append("file", file);
+      if (currentCode) {
+        formData.append("code", currentCode);
       }
-    };
 
-    xhr.onload = () => {
-      setIsUploading(false);
-      if (xhr.status >= 200 && xhr.status < 300) {
-        const payload = JSON.parse(xhr.responseText);
-        setShareCode(payload.code ?? null);
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/files");
+
+        await new Promise<void>((resolve, reject) => {
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const currentFileProgress = e.loaded / e.total;
+              const totalProgress = ((i + currentFileProgress) / files.length) * 100;
+              setUploadProgress(Math.round(totalProgress));
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              const payload = JSON.parse(xhr.responseText);
+              if (!currentCode) {
+                currentCode = payload.code;
+              }
+              resolve();
+            } else {
+              const response = JSON.parse(xhr.responseText || "{}");
+              if (xhr.status === 500 || xhr.status === 507 || response.error?.toLowerCase().includes("storage")) {
+                bandwidthError = true;
+              }
+              reject(new Error(response.error || "Upload failed"));
+            }
+          };
+
+          xhr.onerror = () => reject(new Error("Network error"));
+          xhr.send(formData);
+        });
+        successCount++;
+      } catch (error) {
+        failCount++;
+        errors.push(`${file.name}: ${(error as Error).message}`);
+        console.error(`Failed to upload ${file.name}`, error);
+      }
+    }
+
+    setIsUploading(false);
+
+    if (bandwidthError) {
+      notify("Unable to share files due to bandwidth limits.", "error");
+      return;
+    }
+
+    if (successCount > 0 && currentCode) {
+      setShareCode(currentCode);
+
+      // Start P2P Host
+      startP2PHost(currentCode, files);
+
+      if (failCount > 0) {
         notify(
-          `Share code ${payload.code ?? ""} ready. Link expires in 1 minute.`,
-          "success"
+          `Uploaded ${successCount} files. ${failCount} failed.`,
+          "info"
         );
       } else {
-        const payload = JSON.parse(xhr.responseText || "{}");
-        notify(payload.error || "Upload failed.", "error");
+        notify(
+          `Share code ${currentCode} ready. Link expires in 1 minute.`,
+          "success"
+        );
       }
-    };
+    } else {
+      notify(
+        `Failed to upload files. ${errors[0] || "Unknown error"}`,
+        "error"
+      );
+    }
+  }
 
-    xhr.onerror = () => {
-      setIsUploading(false);
-      notify("Upload failed.", "error");
-    };
-
-    const formData = new FormData();
-    formData.append("file", file);
-    xhr.send(formData);
+  async function handleUploadFiles(files: File[]) {
+    // Check file sizes
+    for (const file of files) {
+      if (file.size > MAX_FILE_SIZE) {
+        notify(`File "${file.name}" is too large (Max 50MB).`, "error");
+        return;
+      }
+    }
+    uploadFiles(files);
   }
 
   async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
-    const data = new FormData(form);
-    const file = data.get("file");
+    const formData = new FormData(form);
+    const files = formData.getAll("file").filter((f): f is File => f instanceof File);
 
-    if (!file || !(file instanceof File)) {
-      notify("Please choose a file to upload.", "error");
+    if (files.length === 0) {
+      notify("Please choose at least one file to upload.", "error");
       return;
     }
 
-    uploadFile(file);
+    handleUploadFiles(files);
     form.reset();
+  }
+
+  async function startP2PPeer(code: string) {
+    try {
+      const offerStr = await checkSignal(code, "HOST");
+      if (!offerStr) return; // No P2P host available
+
+      let incomingMetadata: { name: string; size: number; type: string } | null = null;
+      let receivedChunks: ArrayBuffer[] = [];
+      let receivedBytes = 0;
+
+      p2pManager.current = new P2PManager(
+        () => {
+          setIsP2PConnected(true);
+        },
+        (data) => {
+          if (typeof data === "string") {
+            try {
+              const json = JSON.parse(data);
+              if (json.type === "metadata") {
+                incomingMetadata = json.file;
+                receivedChunks = [];
+                receivedBytes = 0;
+              }
+            } catch { }
+            return;
+          }
+
+          if (data instanceof ArrayBuffer && incomingMetadata) {
+            receivedChunks.push(data);
+            receivedBytes += data.byteLength;
+
+            if (receivedBytes >= incomingMetadata.size) {
+              const blob = new Blob(receivedChunks, { type: incomingMetadata.type });
+              const url = URL.createObjectURL(blob);
+
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = incomingMetadata.name;
+              a.click();
+
+              incomingMetadata = null;
+              receivedChunks = [];
+              receivedBytes = 0;
+            }
+          }
+        },
+        () => {
+          setIsP2PConnected(false);
+        }
+      );
+
+      const answer = await p2pManager.current.createAnswer(offerStr);
+      await uploadSignal(code, "PEER", answer);
+
+    } catch (error) {
+      console.error("P2P Peer Error", error);
+    }
   }
 
   async function handleCodeDownload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!navigator.onLine) {
+      notify("You are offline. Please check your connection.", "error");
+      return;
+    }
     const trimmed = codeInput.trim().toUpperCase();
     if (trimmed.length < 4) {
       notify("Enter the 6-character code.", "error");
       return;
     }
     setIsCodeLoading(true);
+
+    // Try to start P2P first/parallel
+    startP2PPeer(trimmed);
+
     try {
       const response = await fetch(`/api/code/${trimmed}`);
       const payload = await response.json().catch(() => ({}));
@@ -146,13 +380,66 @@ export default function FileShare() {
         notify(payload.error || "Code not found.", "error");
         return;
       }
+
+      const files = payload.files as SharedFile[];
+      setReceivedFiles(files);
       setCodeInput("");
-      notify(`Downloading ${payload.file?.name ?? "file"}...`, "success");
-      window.open(payload.file?.url, "_blank", "noopener");
+
+      if (files.length === 1) {
+        notify(`Downloading ${files[0].name}...`, "success");
+        window.open(files[0].url, "_blank", "noopener");
+      } else {
+        notify(`Found ${files.length} files.`, "success");
+      }
+
     } catch (error) {
       notify((error as Error).message, "error");
     } finally {
       setIsCodeLoading(false);
+    }
+  }
+
+  const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number; filename: string } | null>(null);
+
+  async function downloadAll() {
+    if (receivedFiles.length === 0) return;
+
+    const total = receivedFiles.length;
+    let successCount = 0;
+
+    for (let i = 0; i < total; i++) {
+      const file = receivedFiles[i];
+      setDownloadProgress({ current: i + 1, total, filename: file.name });
+
+      try {
+        const response = await fetch(file.url);
+        if (!response.ok) throw new Error("Download failed");
+
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        // Small delay to ensure browser handles the download action
+        await new Promise(resolve => setTimeout(resolve, 500));
+        URL.revokeObjectURL(url);
+        successCount++;
+      } catch (error) {
+        console.error(`Failed to download ${file.name}`, error);
+        notify(`Failed to download ${file.name}`, "error");
+      }
+    }
+
+    setDownloadProgress(null);
+    if (successCount === total) {
+      notify("All files downloaded successfully!", "success");
+    } else {
+      notify(`Downloaded ${successCount} of ${total} files.`, "info");
     }
   }
 
@@ -180,6 +467,28 @@ export default function FileShare() {
       setShowQR(true);
     } catch (error) {
       notify("Failed to generate QR code.", "error");
+    }
+  }
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const codeParam = params.get("code");
+    if (codeParam) {
+      setMode("receive");
+      setCodeInput(codeParam);
+    }
+  }, []);
+
+  function getShareLink(code: string) {
+    return `${window.location.origin}?code=${code}`;
+  }
+
+  async function copyLink(code: string) {
+    try {
+      await navigator.clipboard.writeText(getShareLink(code));
+      notify("Link copied to clipboard.", "success");
+    } catch {
+      notify("Unable to copy link.", "error");
     }
   }
 
@@ -270,15 +579,16 @@ export default function FileShare() {
                   type="file"
                   name="file"
                   required
-                  aria-label="Upload file"
+                  multiple
+                  aria-label="Upload files"
                   disabled={isUploading}
                 />
                 <span>
                   {isUploading
                     ? `Uploading… ${uploadProgress}%`
                     : isDragging
-                      ? "Drop file here!"
-                      : "Choose file or drag & drop"}
+                      ? "Drop files here!"
+                      : "Choose files or drag & drop"}
                 </span>
               </label>
               <button type="submit" disabled={isUploading}>
@@ -303,9 +613,14 @@ export default function FileShare() {
                 <p className="share-label">Share this code</p>
                 <strong aria-live="polite">{shareCode}</strong>
               </div>
-              <button type="button" className="ghost" onClick={() => copyCode(shareCode)}>
-                Copy
-              </button>
+              <div className="file-actions">
+                <button type="button" className="ghost" onClick={() => copyCode(shareCode)}>
+                  Copy Code
+                </button>
+                <button type="button" onClick={() => copyLink(shareCode)}>
+                  Copy Link
+                </button>
+              </div>
             </div>
           )}
         </section>
@@ -344,15 +659,66 @@ export default function FileShare() {
                 maxLength={6}
               />
               <button type="submit" disabled={isCodeLoading || codeInput.length < 4}>
-                {isCodeLoading ? "Preparing…" : "Download"}
+                {isCodeLoading ? "Checking…" : "Download"}
               </button>
             </div>
           </form>
 
-          <p className="notice subtle">
-            Files stay hidden until a valid code is entered. Only the exact code holder
-            can download.
-          </p>
+          {receivedFiles.length > 0 && (
+            <div className="file-list-container">
+              <h3>Files ({receivedFiles.length})</h3>
+              <ul className="file-list">
+                {receivedFiles.map((file) => (
+                  <li key={file.id} className="file-row">
+                    <div>
+                      <strong>{file.name}</strong>
+                      <span>{file.sizeLabel}</span>
+                    </div>
+                    <a
+                      href={file.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="pill"
+                      download
+                    >
+                      Download
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              {receivedFiles.length > 1 && (
+                <button
+                  type="button"
+                  className="action-link"
+                  style={{ width: "100%", marginTop: "1rem" }}
+                  onClick={downloadAll}
+                  disabled={!!downloadProgress}
+                >
+                  {downloadProgress
+                    ? `Downloading ${downloadProgress.current}/${downloadProgress.total}...`
+                    : `Download All (${receivedFiles.length})`}
+                </button>
+              )}
+              {downloadProgress && (
+                <div className="progress-container" style={{ marginTop: "0.5rem" }}>
+                  <div
+                    className="progress-fill"
+                    style={{ width: `${(downloadProgress.current / downloadProgress.total) * 100}%` }}
+                  />
+                  <small style={{ display: "block", textAlign: "center", marginTop: "4px" }}>
+                    {downloadProgress.filename}
+                  </small>
+                </div>
+              )}
+            </div>
+          )}
+
+          {receivedFiles.length === 0 && (
+            <p className="notice subtle">
+              Files stay hidden until a valid code is entered. Only the exact code holder
+              can download.
+            </p>
+          )}
         </section>
       )}
 
@@ -368,7 +734,17 @@ export default function FileShare() {
           </div>
         </div>
       )}
-      <div className="creator-credit">Created by Abel A</div>
+      <div
+        className="creator-credit"
+        style={isP2PConnected ? {
+          color: "#4ade80",
+          textShadow: "0 0 10px #4ade80",
+          fontWeight: "bold",
+          transition: "all 0.5s ease"
+        } : {}}
+      >
+        Created by Abel A
+      </div>
     </>
   );
 }
