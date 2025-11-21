@@ -588,7 +588,7 @@ export default function FileShare() {
                   <h3>Selected Files ({selectedFiles.length})</h3>
                   <ul className="file-list">
                     {selectedFiles.map((file, index) => (
-                      <li key={`${file.name}-${index}`} className="file-row">
+                      <li key={`${file.name}-${index}`} className="file-row pop-in">
                         <div className="file-info">
                           <strong>{file.name}</strong>
                           <span>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
@@ -635,7 +635,7 @@ export default function FileShare() {
                 type="button"
                 onClick={startUpload}
                 disabled={isUploading || selectedFiles.length === 0}
-                className="primary-button"
+                className={`primary-button ${isUploading ? "pulse-active" : ""}`}
                 style={{ marginTop: "1rem", width: "100%" }}
               >
                 {isUploading ? `Uploading… ${uploadProgress}%` : "Upload Files"}
@@ -644,7 +644,7 @@ export default function FileShare() {
               {isUploading && (
                 <div className="progress-container" style={{ marginTop: "1rem" }}>
                   <div
-                    className="progress-fill"
+                    className="progress-fill animated"
                     style={{ width: `${uploadProgress}%` }}
                   />
                 </div>
@@ -726,7 +726,7 @@ export default function FileShare() {
               <h3>Files ({receivedFiles.length})</h3>
               <ul className="file-list">
                 {receivedFiles.map((file) => (
-                  <li key={file.id} className="file-row">
+                  <li key={file.id} className="file-row pop-in">
                     <div>
                       <strong>{file.name}</strong>
                       <span>{file.sizeLabel}</span>
@@ -759,7 +759,7 @@ export default function FileShare() {
               {downloadProgress && (
                 <div className="progress-container" style={{ marginTop: "0.5rem" }}>
                   <div
-                    className="progress-fill"
+                    className="progress-fill animated"
                     style={{ width: `${(downloadProgress.current / downloadProgress.total) * 100}%` }}
                   />
                   <small style={{ display: "block", textAlign: "center", marginTop: "4px" }}>
