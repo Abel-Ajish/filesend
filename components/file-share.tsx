@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { P2PManager } from "@/lib/p2p";
 import { uploadSignal, checkSignal } from "@/lib/appwrite";
@@ -35,6 +35,8 @@ export default function FileShare() {
   const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
   const [receivedFiles, setReceivedFiles] = useState<SharedFile[]>([]);
   const [isP2PConnected, setIsP2PConnected] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number; filename: string } | null>(null);
 
   const toastTimer = useRef<NodeJS.Timeout | null>(null);
   const p2pManager = useRef<P2PManager | null>(null);
@@ -75,6 +77,15 @@ export default function FileShare() {
     };
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const codeParam = params.get("code");
+    if (codeParam) {
+      setMode("receive");
+      setCodeInput(codeParam);
+    }
+  }, []);
+
   function toggleTheme() {
     const newTheme = theme === "light" ? "dark" : "light";
     setTheme(newTheme);
@@ -101,7 +112,22 @@ export default function FileShare() {
     setIsDragging(false);
     const droppedFiles = Array.from(e.dataTransfer.files);
     if (droppedFiles.length > 0) {
-      handleUploadFiles(droppedFiles);
+      addFiles(droppedFiles);
+    }
+  }
+
+  function addFiles(files: File[]) {
+    setSelectedFiles((prev) => [...prev, ...files]);
+  }
+
+  function removeFile(index: number) {
+    setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    if (e.target.files && e.target.files.length > 0) {
+      addFiles(Array.from(e.target.files));
+      e.target.value = "";
     }
   }
 
@@ -113,12 +139,9 @@ export default function FileShare() {
     p2pManager.current = new P2PManager(
       () => {
         setIsP2PConnected(true);
-        // Connected! Send files.
         sendP2PFiles();
       },
-      (data) => {
-        // Host receiving data? Not implemented for this flow.
-      },
+      (data) => { },
       () => {
         setIsP2PConnected(false);
       }
@@ -128,7 +151,6 @@ export default function FileShare() {
       const offer = await p2pManager.current.createOffer();
       await uploadSignal(code, "HOST", offer);
 
-      // Poll for answer
       const pollInterval = setInterval(async () => {
         if (!p2pManager.current) {
           clearInterval(pollInterval);
@@ -141,7 +163,6 @@ export default function FileShare() {
         }
       }, 2000);
 
-      // Stop polling after 2 minutes
       setTimeout(() => clearInterval(pollInterval), 120000);
 
     } catch (error) {
@@ -152,10 +173,9 @@ export default function FileShare() {
   async function sendP2PFiles() {
     if (!p2pManager.current) return;
 
-    const CHUNK_SIZE = 16 * 1024; // 16KB safe chunk size
+    const CHUNK_SIZE = 16 * 1024;
 
     for (const file of p2pFilesToSend.current) {
-      // Send metadata
       const metadata = JSON.stringify({
         type: "metadata",
         file: {
@@ -166,7 +186,6 @@ export default function FileShare() {
       });
       p2pManager.current.send(metadata);
 
-      // Send file content in chunks
       const buffer = await file.arrayBuffer();
       let offset = 0;
       while (offset < buffer.byteLength) {
@@ -250,31 +269,20 @@ export default function FileShare() {
 
     if (successCount > 0 && currentCode) {
       setShareCode(currentCode);
-
-      // Start P2P Host
+      setSelectedFiles([]);
       startP2PHost(currentCode, files);
 
       if (failCount > 0) {
-        notify(
-          `Uploaded ${successCount} files. ${failCount} failed.`,
-          "info"
-        );
+        notify(`Uploaded ${successCount} files. ${failCount} failed.`, "info");
       } else {
-        notify(
-          `Share code ${currentCode} ready. Link expires in 1 minute.`,
-          "success"
-        );
+        notify(`Share code ${currentCode} ready. Link expires in 1 minute.`, "success");
       }
     } else {
-      notify(
-        `Failed to upload files. ${errors[0] || "Unknown error"}`,
-        "error"
-      );
+      notify(`Failed to upload files. ${errors[0] || "Unknown error"}`, "error");
     }
   }
 
   async function handleUploadFiles(files: File[]) {
-    // Check file sizes
     for (const file of files) {
       if (file.size > MAX_FILE_SIZE) {
         notify(`File "${file.name}" is too large (Max 50MB).`, "error");
@@ -284,25 +292,18 @@ export default function FileShare() {
     uploadFiles(files);
   }
 
-  async function handleUpload(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const formData = new FormData(form);
-    const files = formData.getAll("file").filter((f): f is File => f instanceof File);
-
-    if (files.length === 0) {
+  async function startUpload() {
+    if (selectedFiles.length === 0) {
       notify("Please choose at least one file to upload.", "error");
       return;
     }
-
-    handleUploadFiles(files);
-    form.reset();
+    await handleUploadFiles(selectedFiles);
   }
 
   async function startP2PPeer(code: string) {
     try {
       const offerStr = await checkSignal(code, "HOST");
-      if (!offerStr) return; // No P2P host available
+      if (!offerStr) return;
 
       let incomingMetadata: { name: string; size: number; type: string } | null = null;
       let receivedChunks: ArrayBuffer[] = [];
@@ -370,7 +371,6 @@ export default function FileShare() {
     }
     setIsCodeLoading(true);
 
-    // Try to start P2P first/parallel
     startP2PPeer(trimmed);
 
     try {
@@ -399,8 +399,6 @@ export default function FileShare() {
     }
   }
 
-  const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number; filename: string } | null>(null);
-
   async function downloadAll() {
     if (receivedFiles.length === 0) return;
 
@@ -425,7 +423,6 @@ export default function FileShare() {
         a.click();
         document.body.removeChild(a);
 
-        // Small delay to ensure browser handles the download action
         await new Promise(resolve => setTimeout(resolve, 500));
         URL.revokeObjectURL(url);
         successCount++;
@@ -452,6 +449,19 @@ export default function FileShare() {
     }
   }
 
+  function getShareLink(code: string) {
+    return `${window.location.origin}?code=${code}`;
+  }
+
+  async function copyLink(code: string) {
+    try {
+      await navigator.clipboard.writeText(getShareLink(code));
+      notify("Link copied to clipboard.", "success");
+    } catch {
+      notify("Unable to copy link.", "error");
+    }
+  }
+
   async function generateQRCode() {
     try {
       const websiteUrl = "https://fileshare-pi.vercel.app/";
@@ -467,28 +477,6 @@ export default function FileShare() {
       setShowQR(true);
     } catch (error) {
       notify("Failed to generate QR code.", "error");
-    }
-  }
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const codeParam = params.get("code");
-    if (codeParam) {
-      setMode("receive");
-      setCodeInput(codeParam);
-    }
-  }, []);
-
-  function getShareLink(code: string) {
-    return `${window.location.origin}?code=${code}`;
-  }
-
-  async function copyLink(code: string) {
-    try {
-      await navigator.clipboard.writeText(getShareLink(code));
-      notify("Link copied to clipboard.", "success");
-    } catch {
-      notify("Unable to copy link.", "error");
     }
   }
 
@@ -562,52 +550,107 @@ export default function FileShare() {
               onClick={() => {
                 setMode(null);
                 setShareCode(null);
+                setSelectedFiles([]);
               }}
             >
               ← Back
             </button>
           </div>
           <p>Choose any file — we&apos;ll instantly create a shareable download link.</p>
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
-            <form onSubmit={handleUpload} encType="multipart/form-data">
-              <label className={`file-input ${isDragging ? "drag-active" : ""}`}>
-                <input
-                  type="file"
-                  name="file"
-                  required
-                  multiple
-                  aria-label="Upload files"
-                  disabled={isUploading}
-                />
-                <span>
-                  {isUploading
-                    ? `Uploading… ${uploadProgress}%`
-                    : isDragging
+
+          {!shareCode ? (
+            <>
+              <div
+                className="drop-zone"
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+              >
+                <label className={`file-input ${isDragging ? "drag-active" : ""}`}>
+                  <input
+                    type="file"
+                    name="file"
+                    multiple
+                    aria-label="Upload files"
+                    disabled={isUploading}
+                    onChange={handleFileSelect}
+                  />
+                  <span>
+                    {isDragging
                       ? "Drop files here!"
                       : "Choose files or drag & drop"}
-                </span>
-              </label>
-              <button type="submit" disabled={isUploading}>
-                {isUploading ? "Sending…" : "Upload"}
-              </button>
-            </form>
-            {isUploading && (
-              <div className="progress-container">
-                <div
-                  className="progress-fill"
-                  style={{ width: `${uploadProgress}%` }}
-                />
+                  </span>
+                </label>
               </div>
-            )}
-          </div>
-          <small className="notice subtle">
-            Heads up: every file self-destructs one minute after you upload it.
-          </small>
-          {shareCode && (
+
+              {selectedFiles.length > 0 && (
+                <div className="selected-files-list">
+                  <h3>Selected Files ({selectedFiles.length})</h3>
+                  <ul className="file-list">
+                    {selectedFiles.map((file, index) => (
+                      <li key={`${file.name}-${index}`} className="file-row">
+                        <div className="file-info">
+                          <strong>{file.name}</strong>
+                          <span>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="remove-button"
+                          onClick={() => removeFile(index)}
+                          disabled={isUploading}
+                          aria-label={`Remove ${file.name}`}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            cursor: "pointer",
+                            fontSize: "1.2rem",
+                            color: "var(--md-sys-color-on-surface)",
+                            padding: "0.5rem",
+                            minWidth: "auto",
+                            boxShadow: "none",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            borderRadius: "50%",
+                            transition: "background 0.2s, color 0.2s"
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "rgba(179, 38, 30, 0.1)";
+                            e.currentTarget.style.color = "var(--md-sys-color-error)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "transparent";
+                            e.currentTarget.style.color = "var(--md-sys-color-on-surface)";
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={startUpload}
+                disabled={isUploading || selectedFiles.length === 0}
+                className="primary-button"
+                style={{ marginTop: "1rem", width: "100%" }}
+              >
+                {isUploading ? `Uploading… ${uploadProgress}%` : "Upload Files"}
+              </button>
+
+              {isUploading && (
+                <div className="progress-container" style={{ marginTop: "1rem" }}>
+                  <div
+                    className="progress-fill"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              )}
+            </>
+          ) : (
             <div className="share-result">
               <div>
                 <p className="share-label">Share this code</p>
@@ -621,8 +664,22 @@ export default function FileShare() {
                   Copy Link
                 </button>
               </div>
+              <button
+                type="button"
+                className="ghost"
+                style={{ marginTop: "1rem", width: "100%" }}
+                onClick={() => {
+                  setShareCode(null);
+                  setSelectedFiles([]);
+                }}
+              >
+                Send More Files
+              </button>
             </div>
           )}
+          <small className="notice subtle" style={{ marginTop: "1rem", display: "block" }}>
+            Heads up: every file self-destructs one minute after you upload it.
+          </small>
         </section>
       )}
 
