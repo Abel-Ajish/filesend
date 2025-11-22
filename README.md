@@ -66,3 +66,21 @@ Since files only live for 1 minute, storage is never an issue. Monitor your band
 - There is no auth: anyone with the site URL can upload/delete. Deploy this only for trusted environments or add your own auth layer.
 - Uploaded files are public; share URLs responsibly.
 
+## Change Log
+
+### v1.2.0
+- **File Transfer Animations**: Added animations for sending and receiving files to enhance user experience.
+- **UI Visibility Fixes**: Fixed visibility issues with the remove file button and resolved `npm run dev` errors.
+
+### v1.1.0
+- **P2P Local Transfer**: Implemented Peer-to-Peer local file transfer with automatic device detection and fallback to server-based uploads.
+- **TURN Server Research**: Investigated free TURN server options for better connectivity.
+- **Local Hosting Fixes**: Resolved issues preventing the application from running locally.
+
+### v1.0.0
+- **Theme Persistence**: Implemented theme preference storage.
+- **Code Generation Update**: Excluded '0' and 'o' from generated codes to improve readability.
+- **UI Enhancements**: Moved QR code button, added QR popup, improved navigation animations, and fixed responsiveness.
+- **QR Code & UI Redesign**: Added QR code for easy access and redesigned initial load to show "Send" and "Receive" options.
+- **Build Fixes**: Resolved compilation errors related to unescaped apostrophes and image tags.
+
