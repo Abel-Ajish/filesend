@@ -611,201 +611,6 @@ button:hover,
   /* Let clicks pass through if needed, though it's text */
 }
 
-.mode-selection h2 {
-  margin: 0 0 2rem 0;
-  font-size: 1.75rem;
-  color: var(--md-sys-color-on-surface);
-}
-
-.mode-options {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 1.5rem;
-}
-
-.mode-card {
-  background: white;
-  border: 2px solid var(--md-sys-color-surface-variant);
-  border-radius: 1.25rem;
-  padding: 2.5rem 2rem;
-  cursor: pointer;
-  transition: all 250ms cubic-bezier(0.4, 0, 0.2, 1);
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-}
-
-.mode-card:hover {
-  border-color: var(--md-sys-color-primary);
-  transform: translateY(-4px) scale(1.02);
-  box-shadow: 0 20px 40px rgba(103, 80, 164, 0.2);
-  background: linear-gradient(135deg, rgba(103, 80, 164, 0.02), rgba(139, 92, 246, 0.02));
-}
-
-.mode-card:active {
-  transform: translateY(-2px) scale(0.98);
-}
-
-.mode-icon {
-  font-size: 4rem;
-  line-height: 1;
-  margin-bottom: 0.5rem;
-  transition: transform 300ms ease;
-}
-
-.mode-card:hover .mode-icon {
-  transform: scale(1.1) rotate(5deg);
-}
-
-.mode-card h3 {
-  margin: 0;
-  font-size: 1.5rem;
-  color: var(--md-sys-color-on-surface);
-}
-
-.mode-card p {
-  margin: 0;
-  color: #64748b;
-  font-size: 0.95rem;
-}
-
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-}
-
-.back-button {
-  background: transparent;
-  border: 1px solid var(--md-sys-color-outline);
-  color: var(--md-sys-color-primary);
-  padding: 0.6rem 1.2rem;
-  border-radius: 999px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 200ms ease;
-  box-shadow: none;
-}
-
-.back-button:hover {
-  background: rgba(103, 80, 164, 0.08);
-  border-color: var(--md-sys-color-primary);
-  transform: translateX(-2px);
-}
-
-/* QR Code Floating Button */
-.qr-floating-button {
-  position: fixed;
-  top: 1.5rem;
-  right: 1.5rem;
-  width: 3.5rem;
-  height: 3.5rem;
-  border-radius: 50%;
-  background: var(--md-sys-color-primary);
-  color: white;
-  border: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  cursor: pointer;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.5rem;
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
-}
-
-.qr-floating-button:hover {
-  transform: scale(1.1) rotate(-5deg);
-  box-shadow: 0 8px 24px rgba(103, 80, 164, 0.3);
-  background: #56308f;
-}
-
-.qr-floating-button:active {
-  transform: scale(0.95);
-}
-
-/* QR Modal */
-.qr-modal {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  animation: fadeIn 0.2s ease-out;
-}
-
-.qr-content {
-  background: white;
-  padding: 2rem;
-  border-radius: 1.5rem;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
-  text-align: center;
-  max-width: 90vw;
-  width: 400px;
-  animation: popIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  align-items: center;
-}
-
-@keyframes popIn {
-  from {
-    opacity: 0;
-    transform: scale(0.9) translateY(10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
-
-.qr-content h3 {
-  margin: 0;
-  color: var(--md-sys-color-on-surface);
-  font-size: 1.5rem;
-}
-
-.qr-content img {
-  max-width: 100%;
-  border-radius: 0.5rem;
-}
-
-.qr-content p {
-  color: var(--md-sys-color-secondary);
-}
-
-.qr-content button {
-  width: 100%;
-  background: var(--md-sys-color-secondary);
-}
-
-.qr-content button:hover {
-  background: #4a4458;
-}
-
-/* Creator Credit */
-.creator-credit {
-  position: fixed;
-  bottom: 1rem;
-  right: 1.5rem;
-  font-size: 0.85rem;
-  color: var(--md-sys-color-outline);
-  font-weight: 500;
-  opacity: 0.7;
-  transition: opacity 200ms ease;
-  z-index: 50;
-  pointer-events: none;
-  /* Let clicks pass through if needed, though it's text */
-}
-
 .creator-credit:hover {
   opacity: 1;
 }
@@ -1065,4 +870,96 @@ button:hover,
 
 .file-row.pop-in {
   animation: file-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+}
+
+/* Smart Board / Large Screen Support */
+@media (min-width: 1400px) {
+  main {
+    width: min(1400px, 90vw);
+    padding: 4rem;
+    gap: 2.5rem;
+  }
+
+  h1 {
+    font-size: 4rem;
+  }
+
+  .hero {
+    padding: 1rem 0 1.5rem;
+  }
+
+  .panel {
+    padding: 3rem;
+    gap: 2rem;
+  }
+
+  .panel h2 {
+    font-size: 2rem;
+  }
+
+  .mode-options {
+    gap: 2.5rem;
+  }
+
+  .mode-card {
+    padding: 4rem 3rem;
+    border-width: 3px;
+  }
+
+  .mode-icon {
+    font-size: 6rem;
+    margin-bottom: 1rem;
+  }
+
+  .mode-card h3 {
+    font-size: 2.2rem;
+  }
+
+  .mode-card p {
+    font-size: 1.3rem;
+  }
+
+  button,
+  .action-link,
+  label.file-input {
+    padding: 1.25rem 2.5rem;
+    font-size: 1.25rem;
+    border-radius: 1.25rem;
+  }
+
+  .file-list {
+    gap: 1.5rem;
+  }
+
+  .file-row {
+    padding: 1.5rem 2rem;
+    border-radius: 1.25rem;
+  }
+
+  .file-row strong {
+    font-size: 1.3rem;
+  }
+
+  .file-row span {
+    font-size: 1.1rem;
+  }
+
+  .code-input {
+    font-size: 1.8rem;
+    padding: 1.25rem 1.5rem;
+    border-radius: 1rem;
+  }
+
+  .share-result {
+    padding: 1.5rem;
+  }
+
+  .share-label {
+    font-size: 1rem;
+  }
+
+  .code-chip {
+    font-size: 1.2rem;
+    padding: 0.4rem 1rem;
+  }
 }
