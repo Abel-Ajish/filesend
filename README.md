@@ -1,14 +1,76 @@
-# Local Share (Appwrite Cloud)
 
-Minimal send/receive sharing site running on Next.js and Appwrite Cloud storage. After each upload we generate a 6-character share code and auto-delete the file 1 minute later (best-effort timer in the API).
+# 📦 Local Share (Appwrite Cloud)
+Temporary, fast, privacy-friendly file sharing — **no login, no history, auto-delete after 1 minute.**
+
+<p align="center">
+  <a href="https://vercel.com/">
+    <img src="https://img.shields.io/badge/Deploy-Vercel-black?style=for-the-badge&logo=vercel">
+  </a>
+  <a href="https://appwrite.io/">
+    <img src="https://img.shields.io/badge/Backend-Appwrite-F02E65?style=for-the-badge&logo=appwrite&logoColor=white">
+  </a>
+  <a href="https://nextjs.org/">
+    <img src="https://img.shields.io/badge/Frontend-Next.js-000000?style=for-the-badge&logo=next.js">
+  </a>
+  <a href="https://www.typescriptlang.org/">
+    <img src="https://img.shields.io/badge/Language-TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white">
+  </a>
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge">
+  </a>
+</p>
+
+---
+
+# 🌐 Overview
+**Local Share** is a minimal send/receive file-sharing web app built on **Next.js** with **Appwrite Cloud** as storage.  
+Just upload → get a 6-character share code → recipient downloads → file auto-deletes after **60 seconds**.
+
+- ⚡ Fast temporary sharing  
+- 🔒 Auto-delete (60 sec lifecycle)  
+- 🧪 P2P local transfers supported  
+- 📱 QR code sending/receiving  
+- 🎨 Material-You inspired UI  
+- 🎯 No user accounts required  
+- 🌑 Theme persistence  
+
+---
+
+# ✨ Features
+### 🚀 Instant Upload + Share Code
+Clean 6-character codes (excluding confusing characters like `0` and `o`).
+
+### ⏳ Auto-Deletion (1 Minute)
+Background deletion timer removes files after 60 seconds.
+
+### 🔄 P2P + Server Fallback
+Local peer-to-peer transfers using WebRTC; uploads to Appwrite if fallback is needed.
+
+### 📱 QR Code Mode
+Share instantly across devices on the same network.
+
+### 🎨 Modern Material-You UI
+Animations, smooth interactions, and theme saving.
+
+---
+
+# 🛠️ Tech Stack
+- Next.js 14+ (App Router)  
+- React  
+- TypeScript  
+- Appwrite Cloud Storage  
+- Vercel  
+- WebRTC for P2P  
+
+---
+
+# 📥 Installation & Setup
 
 ## Prerequisites
+- Node.js **18+**  
+- Appwrite Cloud account (free)
 
-- Node.js 18+
-- An Appwrite Cloud account (free, no credit card required)
-
-## Local development
-
+## Local Development
 ```bash
 npm install
 cp .env.example .env.local
@@ -16,71 +78,98 @@ cp .env.example .env.local
 npm run dev
 ```
 
-### Setting up Appwrite Cloud
+---
 
-1. **Create an account** at [cloud.appwrite.io](https://cloud.appwrite.io) (no credit card needed)
-2. **Create a project** (e.g., "Local Share")
-3. **Create a storage bucket**:
-   - Go to Storage → Create Bucket
-   - Name it "Shared Files"
-   - Note the Bucket ID (e.g., `files`)
-4. **Generate API credentials**:
-   - Go to Settings → API Keys → Create API Key
-   - Name: "Local Share App"
-   - Scopes: Select `files.read` and `files.write`
-   - Copy the API key (shown only once!)
-5. **Add credentials to `.env.local`**:
-   ```env
-   APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
-   APPWRITE_PROJECT_ID=your_project_id_here
-   APPWRITE_API_KEY=your_api_key_here
-   APPWRITE_BUCKET_ID=files
-   ```
+# 🔧 Setting up Appwrite Cloud
+1. Create account: https://cloud.appwrite.io  
+2. Create project (e.g., "Local Share")  
+3. Create bucket:
+   - Storage → Create Bucket  
+   - Name: **Shared Files**  
+   - Bucket ID: `files`
+4. Create API key:
+   - Scopes: `files.read`, `files.write`  
+   - Copy the key once shown
+5. Configure environment:
 
-## Deploy to Vercel
+```env
+APPWRITE_ENDPOINT=https://cloud.appwrite.io/v1
+APPWRITE_PROJECT_ID=your_project_id
+APPWRITE_API_KEY=your_api_key
+APPWRITE_BUCKET_ID=files
+```
 
-1. `vercel init` (or import the repo via the dashboard).
-2. Add the environment variables from `.env.local` for Production, Preview, and Development.
-3. `vercel --prod`.
+---
 
-The default `next.config.mjs` increases the request body limit to ~200 MB so larger files can upload, but you can lower that if desired.
+# 🚀 Deploy to Vercel
+```bash
+vercel init
+vercel --prod
+```
 
-## Architecture
+Add environment variables to:
+- Production  
+- Preview  
+- Development  
 
-- UI: App Router (`app/page.tsx`) with a Material-You styled client component that handles uploads and code-based downloads; no file list is ever shown.
-- Storage: [Appwrite Cloud](https://appwrite.io). Uploaded files become public HTTPS links returned by the API.
-- API: `/api/files` for listing & uploading, `/api/files/[filename]` for delete, `/api/code/[code]` for retrieval. Both routes are dynamic to ensure fresh data.
-- Lifecycle: uploads are scheduled for deletion 60 seconds after the POST completes, and users can retrieve them using the generated share code before it expires.
+---
 
-## Free Tier Limits
+# 🧩 Architecture
+### **Frontend (Next.js)**
+- Single-page workflow  
+- Material-You UI components  
+- App Router (`app/page.tsx`)
 
-Appwrite Cloud free tier includes:
-- **2 GB storage**
-- **5 GB bandwidth/month**
-- **No credit card required**
+### **Backend (Appwrite)**
+- Public temporary storage  
+- File uploads/downloads  
+- API routes:
+  - `POST /api/files`  
+  - `DELETE /api/files/[filename]`  
+  - `GET /api/code/[code]`
 
-Since files only live for 1 minute, storage is never an issue. Monitor your bandwidth usage in the Appwrite dashboard.
+### **Lifecycle**
+1. File uploaded  
+2. Public URL returned  
+3. 6-character code generated  
+4. 60s deletion timer scheduled  
+5. File expires automatically  
 
-## Security considerations
+---
 
-- There is no auth: anyone with the site URL can upload/delete. Deploy this only for trusted environments or add your own auth layer.
-- Uploaded files are public; share URLs responsibly.
+# 💸 Free Tier — Appwrite Cloud
+- **2 GB storage**  
+- **5 GB bandwidth/month**  
+- **No credit card needed**  
 
-## Change Log
+---
 
-### v1.2.0
-- **File Transfer Animations**: Added animations for sending and receiving files to enhance user experience.
-- **UI Visibility Fixes**: Fixed visibility issues with the remove file button and resolved `npm run dev` errors.
+# 🔐 Security
+- No authentication  
+- All files are public  
+- For trusted use only  
 
-### v1.1.0
-- **P2P Local Transfer**: Implemented Peer-to-Peer local file transfer with automatic device detection and fallback to server-based uploads.
-- **TURN Server Research**: Investigated free TURN server options for better connectivity.
-- **Local Hosting Fixes**: Resolved issues preventing the application from running locally.
+---
 
-### v1.0.0
-- **Theme Persistence**: Implemented theme preference storage.
-- **Code Generation Update**: Excluded '0' and 'o' from generated codes to improve readability.
-- **UI Enhancements**: Moved QR code button, added QR popup, improved navigation animations, and fixed responsiveness.
-- **QR Code & UI Redesign**: Added QR code for easy access and redesigned initial load to show "Send" and "Receive" options.
-- **Build Fixes**: Resolved compilation errors related to unescaped apostrophes and image tags.
+# 📝 Change Log
+## **v1.2.0**
+- Added file transfer animations  
+- Fixed remove file button visibility  
+- Resolved `npm run dev` errors  
 
+## **v1.1.0**
+- Added P2P file transfer  
+- TURN server research  
+- Local hosting fixes  
+
+## **v1.0.0**
+- Theme persistence  
+- Improved code generation  
+- QR code UI redesign  
+- Build fixes  
+- Responsiveness improvements  
+
+---
+
+# 📄 License
+MIT License.
