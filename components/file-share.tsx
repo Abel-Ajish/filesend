@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
+import Image from "next/image";
 import { P2PManager } from "@/lib/p2p";
-import { uploadSignal, checkSignal } from "@/lib/appwrite";
+import { uploadSignal, checkSignal, generateShareCode } from "@/lib/appwrite";
 
 type Toast = {
   text: string;
@@ -37,10 +38,24 @@ export default function FileShare() {
   const [isP2PConnected, setIsP2PConnected] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [downloadProgress, setDownloadProgress] = useState<{ current: number; total: number; filename: string } | null>(null);
+  const [sessionCode, setSessionCode] = useState<string | null>(null);
+  const [isWaitingForFiles, setIsWaitingForFiles] = useState(false);
+  const [isSessionSender, setIsSessionSender] = useState(false);
 
   const toastTimer = useRef<NodeJS.Timeout | null>(null);
   const p2pManager = useRef<P2PManager | null>(null);
   const p2pFilesToSend = useRef<File[]>([]);
+  const sessionPollTimer = useRef<NodeJS.Timeout | null>(null);
+  const downloadedFileIds = useRef<Set<string>>(new Set());
+  const isFetching = useRef(false);
+  const isMounted = useRef(false);
+
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!toast) {
@@ -68,11 +83,14 @@ export default function FileShare() {
     }
   }, []);
 
-  // Cleanup P2P on unmount
+  // Cleanup P2P and timers on unmount
   useEffect(() => {
     return () => {
       if (p2pManager.current) {
         p2pManager.current.close();
+      }
+      if (sessionPollTimer.current) {
+        clearInterval(sessionPollTimer.current);
       }
     };
   }, []);
@@ -80,7 +98,16 @@ export default function FileShare() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const codeParam = params.get("code");
-    if (codeParam) {
+    const sessionParam = params.get("session");
+
+    if (sessionParam) {
+      // Sender mode via QR scan
+      setMode("send");
+      setShareCode(sessionParam); // Pre-set the code
+      setIsSessionSender(true);
+      notify(`Connected to session ${sessionParam}`, "success");
+    } else if (codeParam) {
+      // Receiver mode via link (legacy)
       setMode("receive");
       setCodeInput(codeParam);
     }
@@ -204,9 +231,23 @@ export default function FileShare() {
 
     setIsUploading(true);
     setUploadProgress(0);
-    setShareCode(null);
 
-    let currentCode: string | null = null;
+    // If we already have a shareCode (from session), use it. Otherwise reset it.
+    // But wait, if we are in a session, we want to KEEP the code.
+    // If we are NOT in a session, we want to generate a new one (or let server do it).
+    // The server generates code if we don't send one.
+
+    // Logic:
+    // If shareCode is set (via session param), use it.
+    // If not, let server generate.
+
+    const targetCode = shareCode;
+
+    // If we are NOT in a session, we might want to clear the old code to generate a new one for a new batch.
+    // But if we are in a session, we want to append to the existing session code.
+    // For now, let's assume if shareCode is present, we use it.
+
+    let currentCode: string | null = targetCode;
     let successCount = 0;
     let failCount = 0;
     const errors: string[] = [];
@@ -275,7 +316,7 @@ export default function FileShare() {
       if (failCount > 0) {
         notify(`Uploaded ${successCount} files. ${failCount} failed.`, "info");
       } else {
-        notify(`Share code ${currentCode} ready. Link expires in 1 minute.`, "success");
+        notify(`Files uploaded to ${currentCode}.`, "success");
       }
     } else {
       notify(`Failed to upload files. ${errors[0] || "Unknown error"}`, "error");
@@ -369,76 +410,113 @@ export default function FileShare() {
       notify("Enter the 6-character code.", "error");
       return;
     }
+    await fetchAndDownloadFiles(trimmed);
+  }
+
+  async function fetchAndDownloadFiles(code: string, suppressErrors = false) {
+    if (isFetching.current) return false;
+    isFetching.current = true;
     setIsCodeLoading(true);
 
-    startP2PPeer(trimmed);
+    if (!isP2PConnected) {
+      startP2PPeer(code);
+    }
 
     try {
-      const response = await fetch(`/api/code/${trimmed}`);
+      const response = await fetch(`/api/code/${code}`);
       const payload = await response.json().catch(() => ({}));
+
+      if (!isMounted.current) return false;
+
       if (!response.ok) {
-        notify(payload.error || "Code not found.", "error");
-        return;
+        if (!suppressErrors) {
+          notify(payload.error || "Code not found.", "error");
+        }
+        return false;
       }
 
       const files = payload.files as SharedFile[];
-      setReceivedFiles(files);
-      setCodeInput("");
+      console.log(`[FETCH] Fetched ${files.length} files for code ${code}:`, files.map(f => f.name));
 
-      if (files.length === 1) {
-        notify(`Downloading ${files[0].name}...`, "success");
-        window.open(files[0].url, "_blank", "noopener");
-      } else {
-        notify(`Found ${files.length} files.`, "success");
+      // Create a unique key for each file using code + name + size to prevent duplicates
+      const newFiles = files.filter(f => {
+        const fileKey = `${code}-${f.name}-${f.size}`;
+        const isNew = !downloadedFileIds.current.has(fileKey);
+        return isNew;
+      });
+
+      if (newFiles.length > 0) {
+        setReceivedFiles(prev => {
+          const unique = [...prev];
+          newFiles.forEach(nf => {
+            const fileKey = `${code}-${nf.name}-${nf.size}`;
+            const alreadyExists = unique.some(u => {
+              const existingKey = `${code}-${u.name}-${u.size}`;
+              return existingKey === fileKey;
+            });
+            if (!alreadyExists) {
+              unique.push(nf);
+            }
+          });
+          return unique;
+        });
+
+        // Mark all new files as "seen" so we don't process them again in the next poll
+        newFiles.forEach(file => {
+          const fileKey = `${code}-${file.name}-${file.size}`;
+          downloadedFileIds.current.add(fileKey);
+        });
+
+        if (isWaitingForFiles) {
+          // Session mode logic
+          if (newFiles.length === 1) {
+            // Single file -> Auto download
+            const file = newFiles[0];
+            console.log(`[DOWNLOAD] Auto-downloading single file: ${file.name}`);
+            try {
+              const a = document.createElement("a");
+              a.href = file.url;
+              a.download = file.name;
+              a.style.display = "none";
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              notify(`Downloading ${file.name}...`, "success");
+            } catch (error) {
+              console.error(`[DOWNLOAD] Error downloading ${file.name}:`, error);
+            }
+          } else {
+            // Multiple files -> Do NOT auto download, just notify
+            console.log(`[DOWNLOAD] Multiple files received (${newFiles.length}), skipping auto-download`);
+            notify(`Received ${newFiles.length} new files!`, "success");
+          }
+        } else {
+          // Manual mode (legacy)
+          setCodeInput("");
+          if (newFiles.length === 1) {
+            notify(`Downloading ${newFiles[0].name}...`, "success");
+            window.open(newFiles[0].url, "_blank", "noopener");
+          } else {
+            notify(`Found ${newFiles.length} files.`, "success");
+          }
+        }
+        return true;
       }
+      return false;
 
     } catch (error) {
-      notify((error as Error).message, "error");
+      if (!isMounted.current) return false;
+      if (!suppressErrors) notify((error as Error).message, "error");
+      return false;
     } finally {
-      setIsCodeLoading(false);
-    }
-  }
-
-  async function downloadAll() {
-    if (receivedFiles.length === 0) return;
-
-    const total = receivedFiles.length;
-    let successCount = 0;
-
-    for (let i = 0; i < total; i++) {
-      const file = receivedFiles[i];
-      setDownloadProgress({ current: i + 1, total, filename: file.name });
-
-      try {
-        const response = await fetch(file.url);
-        if (!response.ok) throw new Error("Download failed");
-
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = file.name;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-
-        await new Promise(resolve => setTimeout(resolve, 500));
-        URL.revokeObjectURL(url);
-        successCount++;
-      } catch (error) {
-        console.error(`Failed to download ${file.name}`, error);
-        notify(`Failed to download ${file.name}`, "error");
+      if (isMounted.current) {
+        setIsCodeLoading(false);
       }
-    }
-
-    setDownloadProgress(null);
-    if (successCount === total) {
-      notify("All files downloaded successfully!", "success");
-    } else {
-      notify(`Downloaded ${successCount} of ${total} files.`, "info");
+      isFetching.current = false;
     }
   }
+
+
 
   async function copyCode(code: string) {
     try {
@@ -451,6 +529,10 @@ export default function FileShare() {
 
   function getShareLink(code: string) {
     return `${window.location.origin}?code=${code}`;
+  }
+
+  function getSessionLink(code: string) {
+    return `${window.location.origin}?session=${code}`;
   }
 
   async function copyLink(code: string) {
@@ -478,6 +560,46 @@ export default function FileShare() {
     } catch (error) {
       notify("Failed to generate QR code.", "error");
     }
+  }
+
+  async function startReceiveSession() {
+    const code = generateShareCode();
+    setSessionCode(code);
+    setIsWaitingForFiles(true);
+
+    try {
+      const url = getSessionLink(code);
+      const qrDataUrl = await QRCode.toDataURL(url, {
+        width: 256,
+        margin: 2,
+        color: {
+          dark: "#000000",
+          light: "#ffffff",
+        },
+      });
+      setQrCodeUrl(qrDataUrl);
+
+      // Start polling
+      sessionPollTimer.current = setInterval(() => {
+        fetchAndDownloadFiles(code, true);
+      }, 3000);
+
+    } catch (error) {
+      notify("Failed to start session.", "error");
+      setIsWaitingForFiles(false);
+      setSessionCode(null);
+    }
+  }
+
+  function stopReceiveSession() {
+    if (sessionPollTimer.current) {
+      clearInterval(sessionPollTimer.current);
+      sessionPollTimer.current = null;
+    }
+    setIsWaitingForFiles(false);
+    setSessionCode(null);
+    setReceivedFiles([]);
+    downloadedFileIds.current.clear();
   }
 
   return (
@@ -508,289 +630,320 @@ export default function FileShare() {
         </div>
         <div className="pill">Auto delete · 1 min</div>
       </div>
-      {toast && (
-        <div className={`toast toast-${toast.tone}`} role="status" aria-live="polite">
-          {toast.text}
-        </div>
-      )}
+      {
+        toast && (
+          <div className={`toast toast-${toast.tone}`} role="status" aria-live="polite">
+            {toast.text}
+          </div>
+        )
+      }
 
       {/* Mode Selection Screen */}
-      {!mode && (
-        <div className="mode-selection">
-          <h2>What would you like to do?</h2>
-          <div className="mode-options">
-            <button
-              className="mode-card"
-              onClick={() => setMode("send")}
-            >
-              <div className="mode-icon">📤</div>
-              <h3>Send</h3>
-              <p>Upload a file and get a shareable code</p>
-            </button>
-            <button
-              className="mode-card"
-              onClick={() => setMode("receive")}
-            >
-              <div className="mode-icon">📥</div>
-              <h3>Receive</h3>
-              <p>Enter a code to download a file</p>
-            </button>
+      {
+        !mode && (
+          <div className="mode-selection">
+            <h2>What would you like to do?</h2>
+            <div className="mode-options">
+              <button
+                className="mode-card"
+                onClick={() => setMode("send")}
+              >
+                <div className="mode-icon">📤</div>
+                <h3>Send</h3>
+                <p>Upload a file and get a shareable code</p>
+              </button>
+              <button
+                className="mode-card"
+                onClick={() => setMode("receive")}
+              >
+                <div className="mode-icon">📥</div>
+                <h3>Receive</h3>
+                <p>Enter a code or scan to download</p>
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Send Panel */}
-      {mode === "send" && (
-        <section className="panel">
-          <div className="panel-header">
-            <h2>Send</h2>
-            <button
-              type="button"
-              className="back-button"
-              onClick={() => {
-                setMode(null);
-                setShareCode(null);
-                setSelectedFiles([]);
-              }}
-            >
-              ← Back
-            </button>
-          </div>
-          <p>Choose any file — we&apos;ll instantly create a shareable download link.</p>
-
-          {!shareCode ? (
-            <>
-              <div
-                className="drop-zone"
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-              >
-                <label className={`file-input ${isDragging ? "drag-active" : ""}`}>
-                  <input
-                    type="file"
-                    name="file"
-                    multiple
-                    aria-label="Upload files"
-                    disabled={isUploading}
-                    onChange={handleFileSelect}
-                  />
-                  <span>
-                    {isDragging
-                      ? "Drop files here!"
-                      : "Choose files or drag & drop"}
-                  </span>
-                </label>
-              </div>
-
-              {selectedFiles.length > 0 && (
-                <div className="selected-files-list">
-                  <h3>Selected Files ({selectedFiles.length})</h3>
-                  <ul className="file-list">
-                    {selectedFiles.map((file, index) => (
-                      <li key={`${file.name}-${index}`} className="file-row pop-in">
-                        <div className="file-info">
-                          <strong>{file.name}</strong>
-                          <span>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
-                        </div>
-                        <button
-                          type="button"
-                          className="remove-button"
-                          onClick={() => removeFile(index)}
-                          disabled={isUploading}
-                          aria-label={`Remove ${file.name}`}
-                          style={{
-                            background: "transparent",
-                            border: "none",
-                            cursor: "pointer",
-                            fontSize: "1.2rem",
-                            color: "var(--md-sys-color-on-surface)",
-                            padding: "0.5rem",
-                            minWidth: "auto",
-                            boxShadow: "none",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            borderRadius: "50%",
-                            transition: "background 0.2s, color 0.2s"
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = "rgba(179, 38, 30, 0.1)";
-                            e.currentTarget.style.color = "var(--md-sys-color-error)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = "transparent";
-                            e.currentTarget.style.color = "var(--md-sys-color-on-surface)";
-                          }}
-                        >
-                          ✕
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
+      {
+        mode === "send" && (
+          <section className="panel">
+            <div className="panel-header">
+              <h2>Send</h2>
               <button
                 type="button"
-                onClick={startUpload}
-                disabled={isUploading || selectedFiles.length === 0}
-                className={`primary-button ${isUploading ? "pulse-active" : ""}`}
-                style={{ marginTop: "1rem", width: "100%" }}
-              >
-                {isUploading ? `Uploading… ${uploadProgress}%` : "Upload Files"}
-              </button>
-
-              {isUploading && (
-                <div className="progress-container" style={{ marginTop: "1rem" }}>
-                  <div
-                    className="progress-fill animated"
-                    style={{ width: `${uploadProgress}%` }}
-                  />
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="share-result">
-              <div>
-                <p className="share-label">Share this code</p>
-                <strong aria-live="polite">{shareCode}</strong>
-              </div>
-              <div className="file-actions">
-                <button type="button" className="ghost" onClick={() => copyCode(shareCode)}>
-                  Copy Code
-                </button>
-                <button type="button" onClick={() => copyLink(shareCode)}>
-                  Copy Link
-                </button>
-              </div>
-              <button
-                type="button"
-                className="ghost"
-                style={{ marginTop: "1rem", width: "100%" }}
+                className="back-button"
                 onClick={() => {
+                  setMode(null);
                   setShareCode(null);
                   setSelectedFiles([]);
+                  setIsSessionSender(false);
+                  // Clear session param from URL if present
+                  const url = new URL(window.location.href);
+                  if (url.searchParams.has("session")) {
+                    url.searchParams.delete("session");
+                    window.history.replaceState({}, "", url.toString());
+                  }
                 }}
               >
-                Send More Files
+                ← Back
               </button>
             </div>
-          )}
-          <small className="notice subtle" style={{ marginTop: "1rem", display: "block" }}>
-            Heads up: every file self-destructs one minute after you upload it.
-          </small>
-        </section>
-      )}
+            <p>Choose any file — we&apos;ll instantly create a shareable download link.</p>
 
-      {/* Receive Panel */}
-      {mode === "receive" && (
-        <section className="panel">
-          <div className="panel-header">
-            <h2>Receive</h2>
-            <button
-              type="button"
-              className="back-button"
-              onClick={() => {
-                setMode(null);
-                setCodeInput("");
-              }}
-            >
-              ← Back
-            </button>
-          </div>
-          <p>Type your code to Download the file.</p>
-
-          <form className="code-form" onSubmit={handleCodeDownload}>
-            <label htmlFor="code-input">Have a code?</label>
-            <div className="code-input-wrap">
-              <input
-                id="code-input"
-                className="code-input"
-                placeholder="e.g., 9F2K6A"
-                value={codeInput}
-                onChange={(event) =>
-                  setCodeInput(event.target.value.toUpperCase().slice(0, 6))
-                }
-                autoComplete="off"
-                maxLength={6}
-              />
-              <button type="submit" disabled={isCodeLoading || codeInput.length < 4}>
-                {isCodeLoading ? "Checking…" : "Download"}
-              </button>
-            </div>
-          </form>
-
-          {receivedFiles.length > 0 && (
-            <div className="file-list-container">
-              <h3>Files ({receivedFiles.length})</h3>
-              <ul className="file-list">
-                {receivedFiles.map((file) => (
-                  <li key={file.id} className="file-row pop-in">
-                    <div>
-                      <strong>{file.name}</strong>
-                      <span>{file.sizeLabel}</span>
-                    </div>
-                    <a
-                      href={file.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="pill"
-                      download
-                    >
-                      Download
-                    </a>
-                  </li>
-                ))}
-              </ul>
-              {receivedFiles.length > 1 && (
+            {/* If shareCode is present (either from upload or session), show it, but allow adding more files if in session */}
+            {shareCode && !selectedFiles.length && !isUploading && !isSessionSender ? (
+              <div className="share-result">
+                <div>
+                  <p className="share-label">Share this code</p>
+                  <strong aria-live="polite">{shareCode}</strong>
+                </div>
+                <div className="file-actions">
+                  <button type="button" className="ghost" onClick={() => copyCode(shareCode)}>
+                    Copy Code
+                  </button>
+                  <button type="button" onClick={() => copyLink(shareCode)}>
+                    Copy Link
+                  </button>
+                </div>
                 <button
                   type="button"
-                  className="action-link"
-                  style={{ width: "100%", marginTop: "1rem" }}
-                  onClick={downloadAll}
-                  disabled={!!downloadProgress}
+                  className="ghost"
+                  style={{ marginTop: "1rem", width: "100%" }}
+                  onClick={() => {
+                    // Keep the code if it was a session code? 
+                    // For now, let's just clear selection and allow re-upload to same code
+                    setSelectedFiles([]);
+                  }}
                 >
-                  {downloadProgress
-                    ? `Downloading ${downloadProgress.current}/${downloadProgress.total}...`
-                    : `Download All (${receivedFiles.length})`}
+                  Send More Files
                 </button>
-              )}
-              {downloadProgress && (
-                <div className="progress-container" style={{ marginTop: "0.5rem" }}>
-                  <div
-                    className="progress-fill animated"
-                    style={{ width: `${(downloadProgress.current / downloadProgress.total) * 100}%` }}
-                  />
-                  <small style={{ display: "block", textAlign: "center", marginTop: "4px" }}>
-                    {downloadProgress.filename}
-                  </small>
+              </div>
+            ) : (
+              <>
+                <div
+                  className="drop-zone"
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                >
+                  <label className={`file-input ${isDragging ? "drag-active" : ""}`}>
+                    <input
+                      type="file"
+                      name="file"
+                      multiple
+                      aria-label="Upload files"
+                      disabled={isUploading}
+                      onChange={handleFileSelect}
+                    />
+                    <span>
+                      {isDragging
+                        ? "Drop files here!"
+                        : "Choose files or drag & drop"}
+                    </span>
+                  </label>
                 </div>
-              )}
+
+                {selectedFiles.length > 0 && (
+                  <div className="selected-files-list">
+                    <h3>Selected Files ({selectedFiles.length})</h3>
+                    <ul className="file-list">
+                      {selectedFiles.map((file, index) => (
+                        <li key={`${file.name}-${index}`} className="file-row pop-in">
+                          <div className="file-info">
+                            <strong>{file.name}</strong>
+                            <span>{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="remove-button"
+                            onClick={() => removeFile(index)}
+                            disabled={isUploading}
+                            aria-label={`Remove ${file.name}`}
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              cursor: "pointer",
+                              fontSize: "1.2rem",
+                              color: "var(--md-sys-color-on-surface)",
+                              padding: "0.5rem",
+                              minWidth: "auto",
+                              boxShadow: "none",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              borderRadius: "50%",
+                              transition: "background 0.2s, color 0.2s"
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = "rgba(179, 38, 30, 0.1)";
+                              e.currentTarget.style.color = "var(--md-sys-color-error)";
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = "transparent";
+                              e.currentTarget.style.color = "var(--md-sys-color-on-surface)";
+                            }}
+                          >
+                            ✕
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={startUpload}
+                  disabled={isUploading || selectedFiles.length === 0}
+                  className={`primary-button ${isUploading ? "pulse-active" : ""}`}
+                  style={{ marginTop: "1rem", width: "100%" }}
+                >
+                  {isUploading ? `Uploading… ${uploadProgress}%` : shareCode ? `Upload to ${shareCode}` : "Upload Files"}
+                </button>
+
+                {isUploading && (
+                  <div className="progress-container" style={{ marginTop: "1rem" }}>
+                    <div
+                      className="progress-fill animated"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+            <small className="notice subtle" style={{ marginTop: "1rem", display: "block" }}>
+              Heads up: every file self-destructs one minute after you upload it.
+            </small>
+          </section>
+        )
+      }
+
+      {/* Receive Panel */}
+      {
+        mode === "receive" && (
+          <section className="panel">
+            <div className="panel-header">
+              <h2>Receive</h2>
+              <button
+                type="button"
+                className="back-button"
+                onClick={() => {
+                  setMode(null);
+                  setCodeInput("");
+                  stopReceiveSession();
+                }}
+              >
+                ← Back
+              </button>
             </div>
-          )}
 
-          {receivedFiles.length === 0 && (
-            <p className="notice subtle">
-              Files stay hidden until a valid code is entered. Only the exact code holder
-              can download.
-            </p>
-          )}
-        </section>
-      )}
+            {!isWaitingForFiles ? (
+              <>
+                <p>Type your code to Download the file.</p>
 
-      {showQR && (
-        <div className="qr-modal" onClick={() => setShowQR(false)}>
-          <div className="qr-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Scan to Visit Website</h3>
-            <img src={qrCodeUrl} alt="QR Code for website" />
-            <p>Scan this QR code to access the file sharing website on other devices.</p>
-            <button type="button" onClick={() => setShowQR(false)}>
-              Close
-            </button>
+                <form className="code-form" onSubmit={handleCodeDownload}>
+                  <label htmlFor="code-input">Have a code?</label>
+                  <div className="code-input-wrap">
+                    <input
+                      id="code-input"
+                      className="code-input"
+                      placeholder="e.g., 9F2K6A"
+                      value={codeInput}
+                      onChange={(event) =>
+                        setCodeInput(event.target.value.toUpperCase().slice(0, 6))
+                      }
+                      autoComplete="off"
+                      maxLength={6}
+                    />
+                    <button type="submit" disabled={isCodeLoading || codeInput.length < 4}>
+                      {isCodeLoading ? "Checking…" : "Download"}
+                    </button>
+                  </div>
+                </form>
+
+                <div className="divider" style={{ margin: "2rem 0", textAlign: "center", opacity: 0.5 }}>OR</div>
+
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={startReceiveSession}
+                  style={{ width: "100%" }}
+                >
+                  Generate QR to Receive
+                </button>
+              </>
+            ) : (
+              <div className="session-wait-screen" style={{ textAlign: "center" }}>
+                <h3>Waiting for files...</h3>
+                <p>Scan this with your phone to send files here.</p>
+                <div style={{ background: "white", padding: "1rem", borderRadius: "8px", display: "inline-block", margin: "1rem 0" }}>
+                  <Image src={qrCodeUrl} alt="Session QR" width={256} height={256} style={{ display: "block" }} unoptimized />
+                </div>
+                <div style={{ fontSize: "2rem", letterSpacing: "4px", fontWeight: "bold", margin: "1rem 0" }}>
+                  {sessionCode}
+                </div>
+                <button type="button" className="ghost" onClick={stopReceiveSession}>
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {receivedFiles.length > 0 && (
+              <div className="file-list-container">
+                <h3>Received Files ({receivedFiles.length})</h3>
+                <ul className="file-list">
+                  {receivedFiles.map((file) => (
+                    <li key={file.id} className="file-row pop-in">
+                      <div>
+                        <strong>{file.name}</strong>
+                        <span>{file.sizeLabel}</span>
+                      </div>
+                      <a
+                        href={file.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="pill"
+                        download
+                      >
+                        Download
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+
+                {downloadProgress && (
+                  <div className="progress-container" style={{ marginTop: "0.5rem" }}>
+                    <div
+                      className="progress-fill animated"
+                      style={{ width: `${(downloadProgress.current / downloadProgress.total) * 100}%` }}
+                    />
+                    <small style={{ display: "block", textAlign: "center", marginTop: "4px" }}>
+                      {downloadProgress.filename}
+                    </small>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )
+      }
+
+      {
+        showQR && (
+          <div className="qr-modal" onClick={() => setShowQR(false)}>
+            <div className="qr-content" onClick={(e) => e.stopPropagation()}>
+              <h3>Scan to Visit Website</h3>
+              <Image src={qrCodeUrl} alt="QR Code for website" width={256} height={256} unoptimized />
+              <p>Scan this QR code to access the file sharing website on other devices.</p>
+              <button type="button" onClick={() => setShowQR(false)}>
+                Close
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
       <div
         className="creator-credit"
         style={isP2PConnected ? {
