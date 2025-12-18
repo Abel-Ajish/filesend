@@ -436,7 +436,7 @@ export default function FileShare() {
       }
 
       const files = payload.files as SharedFile[];
-      console.log(`[FETCH] Fetched ${files.length} files for code ${code}:`, files.map(f => f.name));
+      console.log("[FETCH] Fetched %d files for code %s:", files.length, code, files.map(f => f.name));
 
       // Create a unique key for each file using code + name + size to prevent duplicates
       const newFiles = files.filter(f => {
