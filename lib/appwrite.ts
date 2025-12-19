@@ -1,6 +1,6 @@
 
 import { Client, Storage, ID, Query, Permission, Role } from "node-appwrite";
-import { InputFile } from "node-appwrite/dist/inputFile.js";
+import { InputFile } from "node-appwrite/file";
 
 const BUCKET_PREFIX = "local-share/";
 const MAX_FILENAME_LENGTH = 180;
