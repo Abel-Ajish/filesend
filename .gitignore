@@ -9,3 +9,5 @@ dist/
 .env.test.local
 uploads/
 dev.log
+test-results/
+*.png
