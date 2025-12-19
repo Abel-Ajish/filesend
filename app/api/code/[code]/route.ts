@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { findFilesByCode } from "@/lib/appwrite";
+import { isRateLimited } from "@/lib/rate-limiter";
+import { headers } from "next/headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,6 +10,14 @@ export async function GET(
   _request: Request,
   { params }: { params: { code: string } }
 ) {
+  const ip = headers().get("x-forwarded-for") ?? "unknown";
+  if (await isRateLimited(ip)) {
+    return NextResponse.json(
+      { error: "Too many requests." },
+      { status: 429 }
+    );
+  }
+
   try {
     const raw = params.code?.trim();
     if (!raw) {

@@ -5,6 +5,8 @@ import {
   listFiles,
   uploadFile,
 } from "@/lib/appwrite";
+import { isRateLimited } from "@/lib/rate-limiter";
+import { headers } from "next/headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +23,23 @@ export async function GET() {
   }
 }
 
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const ALLOWED_FILE_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "application/pdf",
+];
+
 export async function POST(request: Request) {
+  const ip = headers().get("x-forwarded-for") ?? "unknown";
+  if (await isRateLimited(ip)) {
+    return NextResponse.json(
+      { error: "Too many requests." },
+      { status: 429 }
+    );
+  }
+
   try {
     const formData = await request.formData();
     const file = formData.get("file");
@@ -36,6 +54,20 @@ export async function POST(request: Request) {
     if (file.size === 0) {
       return NextResponse.json(
         { error: "Refusing to store empty file." },
+        { status: 400 }
+      );
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: "File exceeds the maximum size limit." },
+        { status: 400 }
+      );
+    }
+
+    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+      return NextResponse.json(
+        { error: "File type is not allowed." },
         { status: 400 }
       );
     }
