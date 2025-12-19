@@ -26,10 +26,25 @@ export async function GET() {
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_FILE_TYPES = [
+  // Images
   "image/jpeg",
   "image/png",
   "image/gif",
+  // Documents
   "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
+  // Archives
+  "application/zip",
+  "application/vnd.rar",
+  // Audio
+  "audio/mpeg",
+  "audio/wav",
+  // Video
+  "video/mp4",
+  "video/quicktime",
+  "video/x-msvideo",
 ];
 
 export async function POST(request: NextRequest) {
