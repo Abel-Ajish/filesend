@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { SharedFile } from "@/lib/types";
+import { QrCodeIcon } from "./Icons";
 
 type ReceiveFlowProps = {
   onBack: () => void;
@@ -15,7 +16,6 @@ type ReceiveFlowProps = {
   setCodeInput: (value: string) => void;
   isCodeLoading: boolean;
   receivedFiles: SharedFile[];
-  downloadProgress: { current: number; total: number; filename: string } | null;
 };
 
 export default function ReceiveFlow({
@@ -30,103 +30,55 @@ export default function ReceiveFlow({
   setCodeInput,
   isCodeLoading,
   receivedFiles,
-  downloadProgress,
 }: ReceiveFlowProps) {
   return (
-    <section className="panel">
-      <div className="panel-header">
-        <h2>Receive</h2>
-        <button type="button" className="back-button" onClick={onBack}>
-          ← Back
-        </button>
-      </div>
+    <div className="flow-panel">
+      <button onClick={onBack} className="back-button">← Back</button>
 
       {!isWaitingForFiles ? (
         <>
-          <p>Type your code to Download the file.</p>
-
           <form className="code-form" onSubmit={handleCodeDownload}>
-            <label htmlFor="code-input">Have a code?</label>
-            <div className="code-input-wrap">
-              <input
-                id="code-input"
-                className="code-input"
-                placeholder="e.g., 9F2K6A"
-                value={codeInput}
-                onChange={(event) =>
-                  setCodeInput(event.target.value.toUpperCase().slice(0, 6))
-                }
-                autoComplete="off"
-                maxLength={6}
-              />
-              <button type="submit" disabled={isCodeLoading || codeInput.length < 4}>
-                {isCodeLoading ? "Checking…" : "Download"}
-              </button>
-            </div>
+            <input
+              className="code-input"
+              placeholder="Enter 6-character code"
+              value={codeInput}
+              onChange={(e) => setCodeInput(e.target.value.toUpperCase().slice(0, 6))}
+              autoComplete="off"
+              maxLength={6}
+            />
+            <button type="submit" className="primary-button" disabled={isCodeLoading || codeInput.length < 4}>
+              {isCodeLoading ? "Verifying..." : "Download Files"}
+            </button>
           </form>
 
-          <div className="divider">OR</div>
+          <div className="divider">or</div>
 
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={startReceiveSession}
-          >
-            Generate QR to Receive
+          <button className="secondary-button" onClick={startReceiveSession}>
+            <QrCodeIcon /> Receive with QR Code
           </button>
         </>
       ) : (
-        <div className="session-wait-screen">
-          <h3>Waiting for files...</h3>
-          <p>Scan this with your phone to send files here.</p>
-          <div className="qr-container">
-            <Image src={qrCodeUrl} alt="Session QR" width={256} height={256} unoptimized />
+        <div className="qr-session">
+          <p>Scan with another device to send files here:</p>
+          <div className="qr-code-wrapper">
+            <Image src={qrCodeUrl} alt="Session QR Code" width={200} height={200} unoptimized />
           </div>
-          <div className="session-code">
-            {sessionCode}
-          </div>
-          <button type="button" className="ghost" onClick={stopReceiveSession}>
-            Cancel
-          </button>
+          <div className="session-code-display">{sessionCode}</div>
+          <button className="secondary-button" onClick={stopReceiveSession}>Cancel</button>
         </div>
       )}
 
       {receivedFiles.length > 0 && (
-        <div className="file-list-container">
-          <h3>Received Files ({receivedFiles.length})</h3>
-          <ul className="file-list">
-            {receivedFiles.map((file) => (
-              <li key={file.id} className="file-row pop-in">
-                <div>
-                  <strong>{file.name}</strong>
-                  <span>{file.sizeLabel}</span>
-                </div>
-                <a
-                  href={file.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="pill"
-                  download
-                >
-                  Download
-                </a>
-              </li>
-            ))}
-          </ul>
-
-          {downloadProgress && (
-            <div className="progress-container">
-              <div
-                className="progress-fill animated"
-                style={{ width: `${(downloadProgress.current / downloadProgress.total) * 100}%` }}
-              />
-              <small>
-                {downloadProgress.filename}
-              </small>
-            </div>
-          )}
+        <div className="file-list received-files">
+          <h3>Received Files:</h3>
+          {receivedFiles.map((file) => (
+            <a key={file.id} href={file.url} className="file-item" download target="_blank" rel="noopener noreferrer">
+              <span>{file.name} ({file.sizeLabel})</span>
+              <span>Download</span>
+            </a>
+          ))}
         </div>
       )}
-    </section>
+    </div>
   );
 }

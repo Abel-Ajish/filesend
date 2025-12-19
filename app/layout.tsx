@@ -1,17 +1,12 @@
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { ReactNode } from "react";
 
-const inter = Inter({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-sans",
-});
-
+// The new font 'Fira Code' is imported directly in globals.css.
+// Setting a default theme here ensures the dark, "lucky" theme is the default.
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="en" data-theme="dark">
       <body>
         {children}
         <SpeedInsights />

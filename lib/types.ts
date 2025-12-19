@@ -6,7 +6,7 @@ export type Toast = {
 export type SharedFile = {
   id: string;
   code: string | null;
-  name: string;
+  name:string;
   size: number;
   sizeLabel: string;
   type: string;

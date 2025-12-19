@@ -2,13 +2,11 @@ import FileShare from "@/components/file-share";
 
 export const dynamic = "force-dynamic";
 
-// This is the new root page structure for our redesigned application.
+// A clean, centered layout for our "lucky" redesign.
 export default function Page() {
   return (
-    <main className="main-container">
-      <div className="content-wrapper">
-        <FileShare />
-      </div>
+    <main>
+      <FileShare />
     </main>
   );
 }
