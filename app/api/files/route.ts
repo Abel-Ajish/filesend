@@ -25,35 +25,6 @@ export async function GET() {
 }
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
-const ALLOWED_FILE_TYPES = [
-  // Images
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/svg+xml",
-  "image/webp",
-  // Documents
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
-  "text/plain",
-  "text/csv",
-  // Archives
-  "application/zip",
-  "application/vnd.rar",
-  "application/x-7z-compressed",
-  "application/gzip",
-  // Audio
-  "audio/mpeg",
-  "audio/wav",
-  // Video
-  "video/mp4",
-  "video/quicktime",
-  "video/x-msvideo",
-  "video/webm",
-  "video/x-matroska",
-];
 
 export async function POST(request: NextRequest) {
   const key = getRateLimiterKey(request);
@@ -89,19 +60,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
-      return NextResponse.json(
-        { error: "File type is not allowed." },
-        { status: 400 }
-      );
-    }
-
     const buffer = await file.arrayBuffer();
 
-    // Validate actual file content matches declared type
-    if (!validateFileType(buffer, file.type)) {
+    // Validate the file type against the blacklist.
+    const validation = await validateFileType(buffer);
+    if (!validation.isValid) {
       return NextResponse.json(
-        { error: "File content does not match declared type." },
+        { error: `File type ${validation.type} is not allowed.` },
         { status: 400 }
       );
     }
@@ -112,7 +77,7 @@ export async function POST(request: NextRequest) {
     await uploadFile({
       filename: file.name,
       arrayBuffer: buffer,
-      contentType: file.type || "application/octet-stream",
+      contentType: validation.type || "application/octet-stream",
       code,
     });
 
