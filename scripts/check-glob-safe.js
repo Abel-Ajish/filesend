@@ -78,7 +78,7 @@ function checkCodebase() {
   try {
     // Exclude this script itself from the search
     const scriptName = path.basename(__filename);
-    const output = execSync(`git grep -nE "glob.*(-c|--cmd)|node.*bin\\.mjs.*-c|foregroundChild.*shell:.*true" -- . ":!scripts/${scriptName}"`, { encoding: 'utf8' });
+    const output = execSync(`git grep -nE "glob.*(-c|--cmd)|node.*bin\\.mjs.*-c|foregroundChild.*shell:.*true" -- . ":!scripts/${scriptName}"`, { encoding: 'utf8', cwd: path.join(__dirname, '..') });
     if (output.trim()) {
         console.error('ERROR: Unsafe glob CLI usage found:');
         console.error(output);
