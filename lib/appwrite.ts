@@ -1,5 +1,5 @@
 
-import { Client, Storage, ID, Query, Permission, Role, InputFile } from "node-appwrite";
+import * as Appwrite from "node-appwrite";
 
 const BUCKET_PREFIX = "local-share/";
 const MAX_FILENAME_LENGTH = 180;
@@ -50,12 +50,12 @@ function requireConfig() {
 function getStorage() {
   const { endpoint, projectId, apiKey } = requireConfig();
 
-  const client = new Client()
+  const client = new Appwrite.Client()
     .setEndpoint(endpoint)
     .setProject(projectId)
     .setKey(apiKey);
 
-  return new Storage(client);
+  return new Appwrite.Storage(client);
 }
 
 export async function listFiles(): Promise<SharedFile[]> {
@@ -90,8 +90,8 @@ export async function uploadFile({
   filePath,
   code,
 }: {
-  filename:string;
-  filePath:string;
+  filename: string;
+  filePath: string;
   code: string;
 }) {
   const storage = getStorage();
@@ -104,9 +104,9 @@ export async function uploadFile({
   // preventing the server from buffering the entire file in memory.
   const uploadedFile = await storage.createFile(
     bucketId,
-    ID.unique(),
-    InputFile.fromPath(filePath, fullName),
-    [Permission.read(Role.any())]  // Allow anyone to read/download the file
+    Appwrite.ID.unique(),
+    Appwrite.InputFile.fromPath(filePath, fullName),
+    [Appwrite.Permission.read(Appwrite.Role.any())]  // Allow anyone to read/download the file
   );
 
   scheduleAutoDelete(uploadedFile.$id);
@@ -205,7 +205,7 @@ export async function findFilesByCode(code: string): Promise<SharedFile[]> {
 
   // Use Query to filter files by name prefix
   const response = await storage.listFiles(bucketId, [
-    Query.startsWith("name", `${normalized}-`),
+    Appwrite.Query.startsWith("name", `${normalized}-`),
   ]);
 
   // Filter out signal files
@@ -236,7 +236,7 @@ export async function uploadSignal(code: string, type: "HOST" | "PEER", data: st
   try {
     // Try to delete existing signal first
     const existing = await storage.listFiles(bucketId, [
-      Query.equal("name", filename)
+      Appwrite.Query.equal("name", filename)
     ]);
     if (existing.total > 0) {
       await storage.deleteFile(bucketId, existing.files[0].$id);
@@ -244,9 +244,9 @@ export async function uploadSignal(code: string, type: "HOST" | "PEER", data: st
 
     const uploaded = await storage.createFile(
       bucketId,
-      ID.unique(),
+      Appwrite.ID.unique(),
       file,
-      [Permission.read(Role.any())]
+      [Appwrite.Permission.read(Appwrite.Role.any())]
     );
 
     // Auto-delete signals quickly (e.g., 2 minutes)
@@ -270,7 +270,7 @@ export async function checkSignal(code: string, type: "HOST" | "PEER"): Promise<
 
   try {
     const response = await storage.listFiles(bucketId, [
-      Query.equal("name", filename)
+      Appwrite.Query.equal("name", filename)
     ]);
 
     if (response.total > 0) {
