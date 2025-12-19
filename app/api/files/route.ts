@@ -30,14 +30,20 @@ const ALLOWED_FILE_TYPES = [
   "image/jpeg",
   "image/png",
   "image/gif",
+  "image/svg+xml",
+  "image/webp",
   // Documents
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
   "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
+  "text/plain",
+  "text/csv",
   // Archives
   "application/zip",
   "application/vnd.rar",
+  "application/x-7z-compressed",
+  "application/gzip",
   // Audio
   "audio/mpeg",
   "audio/wav",
@@ -45,6 +51,8 @@ const ALLOWED_FILE_TYPES = [
   "video/mp4",
   "video/quicktime",
   "video/x-msvideo",
+  "video/webm",
+  "video/x-matroska",
 ];
 
 export async function POST(request: NextRequest) {
