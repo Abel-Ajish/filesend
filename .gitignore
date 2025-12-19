@@ -8,4 +8,4 @@ dist/
 .env.production.local
 .env.test.local
 uploads/
-
+dev.log
