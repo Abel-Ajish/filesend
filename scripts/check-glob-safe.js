@@ -33,7 +33,9 @@ function checkLockfile() {
           const major = parseInt(match[1], 10);
           const minor = parseInt(match[2], 10);
           
-          if (major < REQUIRED_GLOB_VERSION_MAJOR || (major === REQUIRED_GLOB_VERSION_MAJOR && minor < REQUIRED_GLOB_VERSION_MINOR)) {
+          if (major < REQUIRED_GLOB_VERSION_MAJOR || 
+              (major === REQUIRED_GLOB_VERSION_MAJOR && minor < REQUIRED_GLOB_VERSION_MINOR) ||
+              (major === 11 && minor < 1)) {
             console.error(`ERROR: Vulnerable glob version found: ${version} at ${pathStack.join(' > ')} > glob`);
             process.exitCode = 1;
           }
@@ -55,7 +57,9 @@ function checkLockfile() {
              if (match) {
                  const major = parseInt(match[1], 10);
                  const minor = parseInt(match[2], 10);
-                 if (major < REQUIRED_GLOB_VERSION_MAJOR || (major === REQUIRED_GLOB_VERSION_MAJOR && minor < REQUIRED_GLOB_VERSION_MINOR)) {
+                 if (major < REQUIRED_GLOB_VERSION_MAJOR || 
+                     (major === REQUIRED_GLOB_VERSION_MAJOR && minor < REQUIRED_GLOB_VERSION_MINOR) ||
+                     (major === 11 && minor < 1)) {
                       console.error(`ERROR: Vulnerable glob version found in packages: ${version} in ${key}`);
                       process.exitCode = 1;
                  }
@@ -72,7 +76,9 @@ function checkCodebase() {
   console.log('Scanning codebase for unsafe glob CLI usage...');
   // Simple grep via git grep or recursive search
   try {
-    const output = execSync('git grep -nE "glob.*(-c|--cmd)|node.*bin\\.mjs.*-c|foregroundChild.*shell:.*true"', { encoding: 'utf8' });
+    // Exclude this script itself from the search
+    const scriptName = path.basename(__filename);
+    const output = execSync(`git grep -nE "glob.*(-c|--cmd)|node.*bin\\.mjs.*-c|foregroundChild.*shell:.*true" -- . ":!scripts/${scriptName}"`, { encoding: 'utf8' });
     if (output.trim()) {
         console.error('ERROR: Unsafe glob CLI usage found:');
         console.error(output);
