@@ -11,6 +11,10 @@ const FORBIDDEN_PATTERNS = [
   /foregroundChild.*shell:\s*true/
 ];
 
+/**
+ * Verify that package-lock.json contains no glob versions older than 10.5 and mark the process as failing if any are found.
+ *
+ * Reads package-lock.json from the current working directory. If the file is missing the check is skipped. Supports both npm v7+ lockfile format (checks the `packages` map for entries under `node_modules/glob`) and legacy/flattened formats (traverses `dependencies` recursively). When a vulnerable glob version is detected, logs an error with the dependency path and sets `process.exitCode = 1`. */
 function checkLockfile() {
   console.log('Checking package-lock.json for vulnerable glob versions...');
   const lockPath = path.join(process.cwd(), 'package-lock.json');
@@ -68,6 +72,13 @@ function checkLockfile() {
   }
 }
 
+/**
+ * Scan the repository for unsafe glob CLI usage patterns.
+ *
+ * If matches are found, logs the matching lines and sets process.exitCode = 1.
+ * If the underlying git grep command fails for reasons other than "no matches",
+ * logs a warning and skips the source scan.
+ */
 function checkCodebase() {
   console.log('Scanning codebase for unsafe glob CLI usage...');
   // Simple grep via git grep or recursive search
