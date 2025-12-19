@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   InvalidFilenameError,
   generateShareCode,
@@ -6,7 +6,8 @@ import {
   uploadFile,
 } from "@/lib/appwrite";
 import { isRateLimited } from "@/lib/rate-limiter";
-import { headers } from "next/headers";
+import { getRateLimiterKey } from "@/lib/rate-limiter-key";
+import { validateFileType } from "@/lib/file-validator";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,9 +32,9 @@ const ALLOWED_FILE_TYPES = [
   "application/pdf",
 ];
 
-export async function POST(request: Request) {
-  const ip = headers().get("x-forwarded-for") ?? "unknown";
-  if (await isRateLimited(ip)) {
+export async function POST(request: NextRequest) {
+  const key = getRateLimiterKey(request);
+  if (await isRateLimited(key)) {
     return NextResponse.json(
       { error: "Too many requests." },
       { status: 429 }
@@ -73,6 +74,15 @@ export async function POST(request: Request) {
     }
 
     const buffer = await file.arrayBuffer();
+
+    // Validate actual file content matches declared type
+    if (!validateFileType(buffer, file.type)) {
+      return NextResponse.json(
+        { error: "File content does not match declared type." },
+        { status: 400 }
+      );
+    }
+
     const providedCode = formData.get("code") as string | null;
     const code = providedCode || generateShareCode();
 

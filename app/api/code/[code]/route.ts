@@ -1,17 +1,17 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { findFilesByCode } from "@/lib/appwrite";
 import { isRateLimited } from "@/lib/rate-limiter";
-import { headers } from "next/headers";
+import { getRateLimiterKey } from "@/lib/rate-limiter-key";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: { code: string } }
 ) {
-  const ip = headers().get("x-forwarded-for") ?? "unknown";
-  if (await isRateLimited(ip)) {
+  const key = getRateLimiterKey(request);
+  if (await isRateLimited(key)) {
     return NextResponse.json(
       { error: "Too many requests." },
       { status: 429 }
