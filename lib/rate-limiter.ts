@@ -4,6 +4,11 @@ const limit = 10; // Max requests per minute
 const windowMs = 60; // 1 minute in seconds
 
 export async function isRateLimited(key: string): Promise<boolean> {
+  if (!redis) {
+    // If Redis is not configured, disable rate limiting.
+    return false;
+  }
+
   try {
     const count = await redis.incr(key);
 

@@ -12,10 +12,9 @@ export function getRateLimiterKey(request: NextRequest): string {
   const ip = request.ip ?? "unknown";
   const userAgent = request.headers.get("user-agent");
 
-  // If the IP is "unknown", generate a unique key per request to avoid collisions.
+  // If the IP is "unknown", generate a key based on the user agent.
   if (ip === "unknown") {
-    const random = Math.random().toString(36).substring(2, 15);
-    return generateCompositeKey(random, userAgent);
+    return generateCompositeKey("unknown", userAgent);
   }
 
   return generateCompositeKey(ip, userAgent);
