@@ -5,6 +5,13 @@ import {
   listFiles,
   uploadFile,
 } from "@/lib/appwrite";
+import { pipeline } from "stream/promises";
+import { createWriteStream } from "fs";
+import { unlink } from "fs/promises";
+import { join } from "path";
+import { tmpdir } from "os";
+import { Readable } from "stream";
+import { randomUUID } from "crypto";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,32 +29,41 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const formData = await request.formData();
+  const file = formData.get("file");
+
+  if (!file || !(file instanceof File)) {
+    return NextResponse.json(
+      { error: "Missing file in request." },
+      { status: 400 }
+    );
+  }
+
+  if (file.size === 0) {
+    return NextResponse.json(
+      { error: "Refusing to store empty file." },
+      { status: 400 }
+    );
+  }
+
+  // Use a UUID for the temporary file to avoid potential collisions.
+  const tempFilePath = join(tmpdir(), `upload_${randomUUID()}`);
+
   try {
-    const formData = await request.formData();
-    const file = formData.get("file");
+    // Stream the file from the FormData object to a temporary file.
+    // This avoids buffering the entire file in memory.
+    await pipeline(
+      Readable.fromWeb(file.stream() as any),
+      createWriteStream(tempFilePath)
+    );
 
-    if (!file || !(file instanceof File)) {
-      return NextResponse.json(
-        { error: "Missing file in request." },
-        { status: 400 }
-      );
-    }
-
-    if (file.size === 0) {
-      return NextResponse.json(
-        { error: "Refusing to store empty file." },
-        { status: 400 }
-      );
-    }
-
-    const buffer = await file.arrayBuffer();
     const providedCode = formData.get("code") as string | null;
     const code = providedCode || generateShareCode();
 
+    // The modified uploadFile function now takes a file path.
     await uploadFile({
       filename: file.name,
-      arrayBuffer: buffer,
-      contentType: file.type || "application/octet-stream",
+      filePath: tempFilePath,
       code,
     });
 
@@ -59,6 +75,11 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: (error as Error).message },
       { status: 500 }
+    );
+  } finally {
+    // Ensure the temporary file is deleted after the upload.
+    await unlink(tempFilePath).catch((err) =>
+      console.error(`Failed to delete temp file: ${tempFilePath}`, err)
     );
   }
 }

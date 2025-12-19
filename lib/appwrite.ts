@@ -1,5 +1,5 @@
 
-import { Client, Storage, ID, Query, Permission, Role } from "node-appwrite";
+import { Client, Storage, ID, Query, Permission, Role, InputFile } from "node-appwrite";
 
 const BUCKET_PREFIX = "local-share/";
 const MAX_FILENAME_LENGTH = 180;
@@ -87,13 +87,11 @@ export async function listFiles(): Promise<SharedFile[]> {
 
 export async function uploadFile({
   filename,
-  arrayBuffer,
-  contentType,
+  filePath,
   code,
 }: {
-  filename: string;
-  arrayBuffer: ArrayBuffer;
-  contentType: string;
+  filename:string;
+  filePath:string;
   code: string;
 }) {
   const storage = getStorage();
@@ -102,14 +100,12 @@ export async function uploadFile({
   const safeName = toSafeFilename(filename);
   const fullName = `${code}-${safeName}`;
 
-  // Convert ArrayBuffer to File object for Appwrite
-  const blob = new Blob([arrayBuffer], { type: contentType });
-  const file = new File([blob], fullName, { type: contentType });
-
+  // Use InputFile.fromPath to stream the upload from a temporary file,
+  // preventing the server from buffering the entire file in memory.
   const uploadedFile = await storage.createFile(
     bucketId,
     ID.unique(),
-    file,
+    InputFile.fromPath(filePath, fullName),
     [Permission.read(Role.any())]  // Allow anyone to read/download the file
   );
 
