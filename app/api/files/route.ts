@@ -1,10 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   InvalidFilenameError,
   generateShareCode,
   listFiles,
   uploadFile,
 } from "@/lib/appwrite";
+import { isRateLimited } from "@/lib/rate-limiter";
+import { getRateLimiterKey } from "@/lib/rate-limiter-key";
+import { validateFileType } from "@/lib/file-validator";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +24,17 @@ export async function GET() {
   }
 }
 
-export async function POST(request: Request) {
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+export async function POST(request: NextRequest) {
+  const key = getRateLimiterKey(request);
+  if (await isRateLimited(key)) {
+    return NextResponse.json(
+      { error: "Too many requests." },
+      { status: 429 }
+    );
+  }
+
   try {
     const formData = await request.formData();
     const file = formData.get("file");
@@ -40,14 +53,31 @@ export async function POST(request: Request) {
       );
     }
 
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: "File exceeds the maximum size limit." },
+        { status: 400 }
+      );
+    }
+
     const buffer = await file.arrayBuffer();
+
+    // Validate the file type against the blacklist.
+    const validation = await validateFileType(buffer);
+    if (!validation.isValid) {
+      return NextResponse.json(
+        { error: `File type ${validation.type} is not allowed.` },
+        { status: 400 }
+      );
+    }
+
     const providedCode = formData.get("code") as string | null;
     const code = providedCode || generateShareCode();
 
     await uploadFile({
       filename: file.name,
       arrayBuffer: buffer,
-      contentType: file.type || "application/octet-stream",
+      contentType: validation.type || "application/octet-stream",
       code,
     });
 

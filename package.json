@@ -10,8 +10,12 @@
     "check-glob-safe": "node scripts/check-glob-safe.js"
   },
   "dependencies": {
+    "@types/jszip": "^3.4.0",
     "@types/qrcode": "^1.5.6",
+    "@upstash/redis": "^1.35.8",
     "@vercel/speed-insights": "^1.2.0",
+    "file-type": "^21.1.1",
+    "jszip": "^3.10.1",
     "next": "14.2.35",
     "node-appwrite": "^13.0.0",
     "qrcode": "^1.5.4",
