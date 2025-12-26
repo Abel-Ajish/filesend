@@ -712,7 +712,7 @@ export default function FileShare() {
                   className="ghost"
                   style={{ marginTop: "1rem", width: "100%" }}
                   onClick={() => {
-                    // Keep the code if it was a session code? 
+                    // Keep the code if it was a session code?
                     // For now, let's just clear selection and allow re-upload to same code
                     setSelectedFiles([]);
                   }}
