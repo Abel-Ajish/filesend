@@ -3,22 +3,43 @@
 Temporary, fast, privacy-friendly file sharing — **no login, no history, auto-delete after 1 minute.**
 
 <p align="center">
+  <!-- Platform -->
   <a href="https://vercel.com/">
     <img src="https://img.shields.io/badge/Deploy-Vercel-black?style=for-the-badge&logo=vercel">
   </a>
   <a href="https://appwrite.io/">
     <img src="https://img.shields.io/badge/Backend-Appwrite-F02E65?style=for-the-badge&logo=appwrite&logoColor=white">
   </a>
-  <a href="https://nextjs.org/">
-    <img src="https://img.shields.io/badge/Frontend-Next.js-000000?style=for-the-badge&logo=next.js">
+
+  <!-- Code Review -->
+  <a href="https://github.com/Abel-Ajish/filesend/pulls">
+    <img src="https://img.shields.io/coderabbit/prs/github/Abel-Ajish/filesend?style=for-the-badge" alt="CodeRabbit Reviews">
   </a>
-  <a href="https://www.typescriptlang.org/">
-    <img src="https://img.shields.io/badge/Language-TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white">
+
+  <!-- Activity -->
+  <a href="https://github.com/Abel-Ajish/filesend/commits/main">
+    <img src="https://img.shields.io/github/last-commit/Abel-Ajish/filesend?style=for-the-badge" alt="Last Commit">
   </a>
+  <a href="https://github.com/Abel-Ajish/filesend">
+    <img src="https://img.shields.io/github/commit-activity/m/Abel-Ajish/filesend?style=for-the-badge" alt="Commit Activity">
+  </a>
+
+  <!-- Repo Info -->
+  <a href="https://github.com/Abel-Ajish/filesend">
+    <img src="https://img.shields.io/github/repo-size/Abel-Ajish/filesend?style=for-the-badge" alt="Repo Size">
+  </a>
+  <a href="https://github.com/Abel-Ajish/filesend">
+    <img src="https://img.shields.io/github/languages/top/Abel-Ajish/filesend?style=for-the-badge" alt="Top Language">
+  </a>
+
+  <!-- License -->
   <a href="https://opensource.org/licenses/MIT">
     <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge">
   </a>
 </p>
+
+
+
 
 ---
 
