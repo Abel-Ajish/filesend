@@ -761,29 +761,6 @@ export default function FileShare() {
                             onClick={() => removeFile(index)}
                             disabled={isUploading}
                             aria-label={`Remove ${file.name}`}
-                            style={{
-                              background: "transparent",
-                              border: "none",
-                              cursor: "pointer",
-                              fontSize: "1.2rem",
-                              color: "var(--md-sys-color-on-surface)",
-                              padding: "0.5rem",
-                              minWidth: "auto",
-                              boxShadow: "none",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              borderRadius: "50%",
-                              transition: "background 0.2s, color 0.2s"
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "rgba(179, 38, 30, 0.1)";
-                              e.currentTarget.style.color = "var(--md-sys-color-error)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "transparent";
-                              e.currentTarget.style.color = "var(--md-sys-color-on-surface)";
-                            }}
                           >
                             ✕
                           </button>
