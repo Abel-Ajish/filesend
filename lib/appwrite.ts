@@ -250,7 +250,7 @@ export async function uploadSignal(code: string, type: "HOST" | "PEER", data: st
       bucketId,
       ID.unique(),
       file,
-      [Permission.read(Role.any())]
+      []
     );
 
     // Auto-delete signals quickly (e.g., 2 minutes)
@@ -279,11 +279,9 @@ export async function checkSignal(code: string, type: "HOST" | "PEER"): Promise<
 
     if (response.total > 0) {
       const fileId = response.files[0].$id;
-      const downloadUrl = getFileUrl(fileId);
-      const res = await fetch(downloadUrl);
-      if (res.ok) {
-        return await res.text();
-      }
+      const payload = await storage.getFileDownload(bucketId, fileId);
+      const decoder = new TextDecoder();
+      return decoder.decode(payload);
     }
     return null;
   } catch {
