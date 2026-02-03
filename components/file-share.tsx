@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import Image from "next/image";
 import { P2PManager } from "@/lib/p2p";
-import { uploadSignal, checkSignal, generateShareCode } from "@/lib/appwrite";
+import { generateShareCode } from "@/lib/appwrite";
 
 type Toast = {
   text: string;
@@ -41,6 +41,9 @@ export default function FileShare() {
   const [sessionCode, setSessionCode] = useState<string | null>(null);
   const [isWaitingForFiles, setIsWaitingForFiles] = useState(false);
   const [isSessionSender, setIsSessionSender] = useState(false);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [tokenInput, setTokenInput] = useState("");
+  const [signalSecret, setSignalSecret] = useState<string | null>(null);
 
   const toastTimer = useRef<NodeJS.Timeout | null>(null);
   const p2pManager = useRef<P2PManager | null>(null);
@@ -99,17 +102,29 @@ export default function FileShare() {
     const params = new URLSearchParams(window.location.search);
     const codeParam = params.get("code");
     const sessionParam = params.get("session");
+    const tokenParam = params.get("token");
+    const secretParam = params.get("secret");
 
     if (sessionParam) {
       // Sender mode via QR scan
       setMode("send");
       setShareCode(sessionParam); // Pre-set the code
       setIsSessionSender(true);
+      if (secretParam) {
+        setSignalSecret(secretParam);
+      }
       notify(`Connected to session ${sessionParam}`, "success");
     } else if (codeParam) {
       // Receiver mode via link (legacy)
       setMode("receive");
       setCodeInput(codeParam);
+      if (tokenParam) {
+        setAccessToken(tokenParam);
+        setTokenInput(tokenParam);
+      }
+      if (secretParam) {
+        setSignalSecret(secretParam);
+      }
     }
   }, []);
 
@@ -158,10 +173,48 @@ export default function FileShare() {
     }
   }
 
+  function generateClientSecret() {
+    if (typeof crypto !== "undefined" && "getRandomValues" in crypto) {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+    }
+    return Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2);
+  }
+
+  async function postSignal(code: string, type: "HOST" | "PEER", data: string, secret: string) {
+    const response = await fetch("/api/signal", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ code, type, data, secret }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || "Failed to send signal.");
+    }
+  }
+
+  async function getSignal(code: string, type: "HOST" | "PEER", secret: string) {
+    const response = await fetch(
+      `/api/signal?code=${encodeURIComponent(code)}&type=${type}&secret=${encodeURIComponent(secret)}`
+    );
+    if (!response.ok) {
+      return null;
+    }
+    const payload = await response.json().catch(() => ({}));
+    return typeof payload.data === "string" ? payload.data : null;
+  }
+
   const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
   async function startP2PHost(code: string, files: File[]) {
     p2pFilesToSend.current = files;
+    const secret = signalSecret ?? generateClientSecret();
+    if (!signalSecret) {
+      setSignalSecret(secret);
+    }
 
     p2pManager.current = new P2PManager(
       () => {
@@ -176,14 +229,14 @@ export default function FileShare() {
 
     try {
       const offer = await p2pManager.current.createOffer();
-      await uploadSignal(code, "HOST", offer);
+      await postSignal(code, "HOST", offer, secret);
 
       const pollInterval = setInterval(async () => {
         if (!p2pManager.current) {
           clearInterval(pollInterval);
           return;
         }
-        const answer = await checkSignal(code, "PEER");
+        const answer = await getSignal(code, "PEER", secret);
         if (answer) {
           clearInterval(pollInterval);
           await p2pManager.current.setAnswer(answer);
@@ -280,6 +333,13 @@ export default function FileShare() {
               if (!currentCode) {
                 currentCode = payload.code;
               }
+              if (payload.accessToken) {
+                setAccessToken(payload.accessToken);
+                setTokenInput(payload.accessToken);
+              }
+              if (payload.signalSecret && !signalSecret) {
+                setSignalSecret(payload.signalSecret);
+              }
               resolve();
             } else {
               const response = JSON.parse(xhr.responseText || "{}");
@@ -343,7 +403,10 @@ export default function FileShare() {
 
   async function startP2PPeer(code: string) {
     try {
-      const offerStr = await checkSignal(code, "HOST");
+      if (!signalSecret) {
+        return;
+      }
+      const offerStr = await getSignal(code, "HOST", signalSecret);
       if (!offerStr) return;
 
       let incomingMetadata: { name: string; size: number; type: string } | null = null;
@@ -392,7 +455,7 @@ export default function FileShare() {
       );
 
       const answer = await p2pManager.current.createAnswer(offerStr);
-      await uploadSignal(code, "PEER", answer);
+      await postSignal(code, "PEER", answer, signalSecret);
 
     } catch (error) {
       console.error("P2P Peer Error", error);
@@ -410,6 +473,10 @@ export default function FileShare() {
       notify("Enter the 6-character code.", "error");
       return;
     }
+    if (!accessToken && !tokenInput && !signalSecret) {
+      notify("Enter the access token from the share link.", "error");
+      return;
+    }
     await fetchAndDownloadFiles(trimmed);
   }
 
@@ -423,7 +490,18 @@ export default function FileShare() {
     }
 
     try {
-      const response = await fetch(`/api/code/${code}`);
+      const token = accessToken || tokenInput;
+      const params = new URLSearchParams();
+      if (token) {
+        params.set("token", token);
+      }
+      if (signalSecret) {
+        params.set("secret", signalSecret);
+      }
+      const query = params.toString();
+      const response = await fetch(`/api/code/${code}${query ? `?${query}` : ""}`, {
+        headers: token ? { "x-access-token": token } : undefined,
+      });
       const payload = await response.json().catch(() => ({}));
 
       if (!isMounted.current) return false;
@@ -528,11 +606,22 @@ export default function FileShare() {
   }
 
   function getShareLink(code: string) {
-    return `${window.location.origin}?code=${code}`;
+    const params = new URLSearchParams({ code });
+    if (accessToken) {
+      params.set("token", accessToken);
+    }
+    if (signalSecret) {
+      params.set("secret", signalSecret);
+    }
+    return `${window.location.origin}?${params.toString()}`;
   }
 
   function getSessionLink(code: string) {
-    return `${window.location.origin}?session=${code}`;
+    const params = new URLSearchParams({ session: code });
+    if (signalSecret) {
+      params.set("secret", signalSecret);
+    }
+    return `${window.location.origin}?${params.toString()}`;
   }
 
   async function copyLink(code: string) {
@@ -564,11 +653,13 @@ export default function FileShare() {
 
   async function startReceiveSession() {
     const code = generateShareCode();
+    const secret = generateClientSecret();
     setSessionCode(code);
+    setSignalSecret(secret);
     setIsWaitingForFiles(true);
 
     try {
-      const url = getSessionLink(code);
+      const url = `${window.location.origin}?session=${code}&secret=${secret}`;
       const qrDataUrl = await QRCode.toDataURL(url, {
         width: 256,
         margin: 2,
@@ -599,6 +690,7 @@ export default function FileShare() {
     setIsWaitingForFiles(false);
     setSessionCode(null);
     setReceivedFiles([]);
+    setSignalSecret(null);
     downloadedFileIds.current.clear();
   }
 
@@ -679,6 +771,9 @@ export default function FileShare() {
                   setShareCode(null);
                   setSelectedFiles([]);
                   setIsSessionSender(false);
+                  setAccessToken(null);
+                  setTokenInput("");
+                  setSignalSecret(null);
                   // Clear session param from URL if present
                   const url = new URL(window.location.href);
                   if (url.searchParams.has("session")) {
@@ -832,6 +927,9 @@ export default function FileShare() {
                 onClick={() => {
                   setMode(null);
                   setCodeInput("");
+                  setAccessToken(null);
+                  setTokenInput("");
+                  setSignalSecret(null);
                   stopReceiveSession();
                 }}
               >
@@ -861,6 +959,22 @@ export default function FileShare() {
                       {isCodeLoading ? "Checking…" : "Download"}
                     </button>
                   </div>
+                  <label htmlFor="token-input" style={{ marginTop: "0.75rem", display: "block" }}>
+                    Access token
+                  </label>
+                  <div className="code-input-wrap">
+                    <input
+                      id="token-input"
+                      className="code-input"
+                      placeholder="Paste access token from the link"
+                      value={tokenInput}
+                      onChange={(event) => setTokenInput(event.target.value.trim())}
+                      autoComplete="off"
+                    />
+                  </div>
+                  <small className="notice subtle" style={{ display: "block", marginTop: "0.5rem" }}>
+                    If you opened a share link, the access token is included automatically.
+                  </small>
                 </form>
 
                 <div className="divider" style={{ margin: "2rem 0", textAlign: "center", opacity: 0.5 }}>OR</div>
