@@ -622,27 +622,25 @@ export default function FileShare() {
         📱
       </button>
 
-      <div className="hero">
-        <div>
-          <h1>Local Share</h1>
-          <p>Drop files, hand off the link, and we&apos;ll tidy up in 60 seconds.</p>
-          <small>Runs entirely on your network using Secure Cloud to ensure seamless transfer of files.</small>
-        </div>
-        <div className="pill">Auto delete · 1 min</div>
-      </div>
-      {
-        toast && (
+      <div className="site-shell">
+        <header className="app-header">
+          <h1 className="app-title">FileSend</h1>
+          <div className="app-header-actions">
+            <span className="status-pill">Secure P2P</span>
+            <span className="status-pill ghost">No sign-in</span>
+          </div>
+        </header>
+
+        {toast && (
           <div className={`toast toast-${toast.tone}`} role="status" aria-live="polite">
             {toast.text}
           </div>
-        )
-      }
+        )}
 
-      {/* Mode Selection Screen */}
-      {
-        !mode && (
+        {/* Mode Selection Screen */}
+        {!mode && (
           <div className="mode-selection">
-            <h2>What would you like to do?</h2>
+            <h2>Choose your transfer</h2>
             <div className="mode-options">
               <button
                 className="mode-card"
@@ -650,7 +648,7 @@ export default function FileShare() {
               >
                 <div className="mode-icon">📤</div>
                 <h3>Send</h3>
-                <p>Upload a file and get a shareable code</p>
+                <p>Upload files and share a secure code instantly.</p>
               </button>
               <button
                 className="mode-card"
@@ -658,16 +656,14 @@ export default function FileShare() {
               >
                 <div className="mode-icon">📥</div>
                 <h3>Receive</h3>
-                <p>Enter a code or scan to download</p>
+                <p>Enter a code or generate a QR to receive files.</p>
               </button>
             </div>
           </div>
-        )
-      }
+        )}
 
-      {/* Send Panel */}
-      {
-        mode === "send" && (
+        {/* Send Panel */}
+        {mode === "send" && (
           <section className="panel">
             <div className="panel-header">
               <h2>Send</h2>
@@ -690,7 +686,7 @@ export default function FileShare() {
                 ← Back
               </button>
             </div>
-            <p>Choose any file — we&apos;ll instantly create a shareable download link.</p>
+            <p>Choose any file and we&apos;ll generate a short code for instant sharing.</p>
 
             {/* If shareCode is present (either from upload or session), show it, but allow adding more files if in session */}
             {shareCode && !selectedFiles.length && !isUploading && !isSessionSender ? (
@@ -761,29 +757,6 @@ export default function FileShare() {
                             onClick={() => removeFile(index)}
                             disabled={isUploading}
                             aria-label={`Remove ${file.name}`}
-                            style={{
-                              background: "transparent",
-                              border: "none",
-                              cursor: "pointer",
-                              fontSize: "1.2rem",
-                              color: "var(--md-sys-color-on-surface)",
-                              padding: "0.5rem",
-                              minWidth: "auto",
-                              boxShadow: "none",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              borderRadius: "50%",
-                              transition: "background 0.2s, color 0.2s"
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = "rgba(179, 38, 30, 0.1)";
-                              e.currentTarget.style.color = "var(--md-sys-color-error)";
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = "transparent";
-                              e.currentTarget.style.color = "var(--md-sys-color-on-surface)";
-                            }}
                           >
                             ✕
                           </button>
@@ -817,12 +790,10 @@ export default function FileShare() {
               Heads up: every file self-destructs one minute after you upload it.
             </small>
           </section>
-        )
-      }
+        )}
 
-      {/* Receive Panel */}
-      {
-        mode === "receive" && (
+        {/* Receive Panel */}
+        {mode === "receive" && (
           <section className="panel">
             <div className="panel-header">
               <h2>Receive</h2>
@@ -841,7 +812,7 @@ export default function FileShare() {
 
             {!isWaitingForFiles ? (
               <>
-                <p>Type your code to Download the file.</p>
+                <p>Enter a code or generate a QR session to receive files.</p>
 
                 <form className="code-form" onSubmit={handleCodeDownload}>
                   <label htmlFor="code-input">Have a code?</label>
@@ -875,18 +846,20 @@ export default function FileShare() {
                 </button>
               </>
             ) : (
-              <div className="session-wait-screen" style={{ textAlign: "center" }}>
-                <h3>Waiting for files...</h3>
-                <p>Scan this with your phone to send files here.</p>
-                <div style={{ background: "white", padding: "1rem", borderRadius: "8px", display: "inline-block", margin: "1rem 0" }}>
-                  <Image src={qrCodeUrl} alt="Session QR" width={256} height={256} style={{ display: "block" }} unoptimized />
+              <div className="session-wait-screen">
+                <div className="session-card">
+                  <h3>Waiting for files...</h3>
+                  <p>Scan this with your phone to send files here.</p>
+                  <div className="qr-frame">
+                    <Image src={qrCodeUrl} alt="Session QR" width={256} height={256} style={{ display: "block" }} unoptimized />
+                  </div>
+                  <div className="session-code">
+                    {sessionCode}
+                  </div>
+                  <button type="button" className="ghost" onClick={stopReceiveSession}>
+                    Cancel
+                  </button>
                 </div>
-                <div style={{ fontSize: "2rem", letterSpacing: "4px", fontWeight: "bold", margin: "1rem 0" }}>
-                  {sessionCode}
-                </div>
-                <button type="button" className="ghost" onClick={stopReceiveSession}>
-                  Cancel
-                </button>
               </div>
             )}
 
@@ -927,8 +900,9 @@ export default function FileShare() {
               </div>
             )}
           </section>
-        )
-      }
+        )}
+
+      </div>
 
       {
         showQR && (
